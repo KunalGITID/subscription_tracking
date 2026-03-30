@@ -94,7 +94,7 @@ h1, h2, h3, h4 {
 
 /* Top App Bar */
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0; left: 0; right: 0;
   display: flex;
   justify-content: space-between;
@@ -159,7 +159,7 @@ section {
 
 .hero-value {
   position: relative;
-  margin-top: 24px;
+  margin-top: 80px;
 }
 
 .currency {
@@ -646,7 +646,7 @@ section {
 
 /* ─── Analytics Segmented Toggle ─── */
 .analytics-toggle-wrap {
-  padding-top: 16px;
+  padding-top: 80px;
   padding-bottom: 4px;
 }
 
