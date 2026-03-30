@@ -10,20 +10,13 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
         detectSessionInUrl: true,
         storage: localStorage
     }
-}; {
-    auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storage: localStorage
-    }
 });
 
 // ═══════════════════════════════════════════
 // GLOBAL STATE
 // ═══════════════════════════════════════════
-let currentUser  = null;
-let profile      = { name: 'Atler', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150', theme: 'default' };
+let currentUser   = null;
+let profile       = { name: 'Atler', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150', theme: 'default' };
 let subscriptions = [];
 let categories    = [];
 let expenses      = [];
@@ -100,7 +93,6 @@ document.getElementById('auth-submit-btn').addEventListener('click', async () =>
         if (authMode === 'signup') {
             const { data, error } = await sb.auth.signUp({ email, password });
             if (error) throw error;
-            // Create profile row
             if (data.user) {
                 await sb.from('profiles').upsert({ user_id: data.user.id, name: name || 'Atler', theme: 'default' });
             }
@@ -115,14 +107,12 @@ document.getElementById('auth-submit-btn').addEventListener('click', async () =>
     }
 });
 
-// Allow Enter key on auth inputs
 ['auth-email','auth-password','auth-name'].forEach(id => {
     document.getElementById(id)?.addEventListener('keydown', e => {
         if (e.key === 'Enter') document.getElementById('auth-submit-btn').click();
     });
 });
 
-// Sign out
 document.getElementById('signout-btn').addEventListener('click', async () => {
     await sb.auth.signOut();
 });
@@ -141,7 +131,6 @@ async function loadAllData() {
         sb.from('expenses').select('*').eq('user_id', uid),
     ]);
 
-    // Profile
     if (profRes.data) {
         profile = {
             name:   profRes.data.name   || 'Atler',
@@ -150,17 +139,16 @@ async function loadAllData() {
         };
     }
 
-    // Map DB columns to camelCase used throughout the app
     subscriptions = (subsRes.data || []).map(s => ({
-        id:               s.id,
-        name:             s.name,
-        cycle:            s.cycle,
-        price:            s.price,
-        dateAdded:        s.date_added,
-        startDate:        s.start_date,
-        category:         s.category || 'unlisted',
-        lastLoggedRenewal:s.last_logged_renewal,
-        paused:           s.paused || false,
+        id:                s.id,
+        name:              s.name,
+        cycle:             s.cycle,
+        price:             s.price,
+        dateAdded:         s.date_added,
+        startDate:         s.start_date,
+        category:          s.category || 'unlisted',
+        lastLoggedRenewal: s.last_logged_renewal,
+        paused:            s.paused || false,
     }));
 
     categories = (catsRes.data || []).map(c => ({
@@ -193,16 +181,16 @@ async function saveProfile() {
 async function upsertSubscription(sub) {
     if (!currentUser) return;
     await sb.from('subscriptions').upsert({
-        id:                 sub.id,
-        user_id:            currentUser.id,
-        name:               sub.name,
-        cycle:              String(sub.cycle),
-        price:              sub.price,
-        date_added:         sub.dateAdded,
-        start_date:         sub.startDate,
-        category:           sub.category || 'unlisted',
-        last_logged_renewal:sub.lastLoggedRenewal || null,
-        paused:             sub.paused || false,
+        id:                  sub.id,
+        user_id:             currentUser.id,
+        name:                sub.name,
+        cycle:               String(sub.cycle),
+        price:               sub.price,
+        date_added:          sub.dateAdded,
+        start_date:          sub.startDate,
+        category:            sub.category || 'unlisted',
+        last_logged_renewal: sub.lastLoggedRenewal || null,
+        paused:              sub.paused || false,
     });
 }
 
@@ -221,20 +209,20 @@ async function upsertCategory(cat) {
     });
 }
 
-async function deleteCategory(id) {
+async function deleteCategoryFromDB(id) {
     if (!currentUser) return;
     await sb.from('categories').delete().eq('id', id).eq('user_id', currentUser.id);
-    // Move subs to unlisted
     const affected = subscriptions.filter(s => s.category === id);
     for (const sub of affected) {
         sub.category = 'unlisted';
         await upsertSubscription(sub);
     }
 }
+
 window.deleteCategory = async function(id) {
     if (!confirm('Delete category? Subscriptions will be moved to Unlisted.')) return;
     categories = categories.filter(c => c.id !== id);
-    await deleteCategory(id);
+    await deleteCategoryFromDB(id);
     renderAnalytics();
 };
 
@@ -266,21 +254,35 @@ async function clearAllData() {
 // ═══════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════
+function escapeHTML(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 function formatDate(ds) {
     return new Date(ds).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
 function todayISO() { return new Date().toISOString().split('T')[0]; }
 function getMonthlyCost(sub) {
-    if (sub.cycle === 'Yearly')  return parseFloat(sub.price) / 12;
-    if (sub.cycle === 'Monthly') return parseFloat(sub.price);
-    return (parseFloat(sub.price) / parseInt(sub.cycle)) * 30;
+    const price = parseFloat(sub.price);
+    if (sub.cycle === 'Yearly')  return price / 12;
+    if (sub.cycle === 'Monthly') return price;
+    const days = parseInt(sub.cycle);
+    if (!days || days <= 0) return price;
+    return (price / days) * 30;
 }
 function getNextRenewalDate(dateAdded, cycle) {
     const start = new Date(dateAdded);
     const today = new Date(); today.setHours(0,0,0,0);
     let next = new Date(start); next.setHours(0,0,0,0);
-    if (cycle === 'Yearly') { while (next <= today) next.setFullYear(next.getFullYear() + 1); }
-    else { const inc = cycle === 'Monthly' ? 30 : parseInt(cycle); while (next <= today) next.setDate(next.getDate() + inc); }
+    if (cycle === 'Yearly') {
+        while (next <= today) next.setFullYear(next.getFullYear() + 1);
+    } else {
+        const inc = cycle === 'Monthly' ? 30 : parseInt(cycle);
+        while (next <= today) next.setDate(next.getDate() + inc);
+    }
     return next;
 }
 function getLastRenewalDate(dateAdded, cycle) {
@@ -358,15 +360,71 @@ function viewDetails(id) {
     activeSubId = id;
     const sub = subscriptions.find(s => s.id === id);
     if (!sub) return;
-    document.getElementById('detail-name').textContent        = sub.name;
-    document.getElementById('detail-cycle').textContent       = formatCycle(sub.cycle) + ' Plan';
-    document.getElementById('detail-price').textContent       = parseFloat(sub.price).toFixed(2);
-    document.getElementById('detail-date').textContent        = formatDate(sub.dateAdded);
-    const anchor = sub.startDate || sub.dateAdded;
-    document.getElementById('detail-renewal-date').textContent = formatDate(getNextRenewalDate(anchor, sub.cycle));
+
+    document.getElementById('detail-name').textContent  = sub.name;
+    document.getElementById('detail-cycle').textContent = formatCycle(sub.cycle) + ' Plan';
+    document.getElementById('detail-price').textContent = parseFloat(sub.price).toFixed(2);
+
+    // Edit form pre-fill
+    document.getElementById('edit-name').value       = sub.name;
+    document.getElementById('edit-cycle').value      = (sub.cycle === 'Monthly' || sub.cycle === 'Yearly') ? sub.cycle : 'Custom';
+    document.getElementById('edit-price').value      = sub.price;
+    document.getElementById('edit-start-date').value = sub.startDate || sub.dateAdded?.split('T')[0] || todayISO();
+
+    const isCustom = sub.cycle !== 'Monthly' && sub.cycle !== 'Yearly';
+    document.getElementById('edit-custom-days-group').style.display = isCustom ? 'block' : 'none';
+    if (isCustom) document.getElementById('edit-custom-days').value = sub.cycle;
+
+    // Pause button state
+    document.getElementById('pause-icon').textContent  = sub.paused ? 'play_arrow' : 'pause';
+    document.getElementById('pause-label').textContent = sub.paused ? 'Resume Subscription' : 'Pause Subscription';
+
     switchPage('details-page');
 }
 
+// Edit form cycle toggle
+document.getElementById('edit-cycle').addEventListener('change', e => {
+    document.getElementById('edit-custom-days-group').style.display = e.target.value === 'Custom' ? 'block' : 'none';
+});
+
+// Edit form submit
+document.getElementById('edit-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const sub = subscriptions.find(s => s.id === activeSubId);
+    if (!sub) return;
+    let cycle = document.getElementById('edit-cycle').value;
+    if (cycle === 'Custom') {
+        const days = parseInt(document.getElementById('edit-custom-days').value);
+        if (!days || days <= 0) return;
+        cycle = days;
+    }
+    sub.name      = document.getElementById('edit-name').value.trim() || sub.name;
+    sub.cycle     = cycle;
+    sub.price     = parseFloat(document.getElementById('edit-price').value).toFixed(2);
+    sub.startDate = document.getElementById('edit-start-date').value || sub.startDate;
+    await upsertSubscription(sub);
+
+    // Refresh detail view
+    document.getElementById('detail-name').textContent  = sub.name;
+    document.getElementById('detail-cycle').textContent = formatCycle(sub.cycle) + ' Plan';
+    document.getElementById('detail-price').textContent = parseFloat(sub.price).toFixed(2);
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.textContent = 'Saved ✓';
+    setTimeout(() => { btn.textContent = 'Save Changes'; }, 1500);
+});
+
+// Pause button
+document.getElementById('pause-sub-btn').addEventListener('click', async () => {
+    const sub = subscriptions.find(s => s.id === activeSubId);
+    if (!sub) return;
+    sub.paused = !sub.paused;
+    await upsertSubscription(sub);
+    document.getElementById('pause-icon').textContent  = sub.paused ? 'play_arrow' : 'pause';
+    document.getElementById('pause-label').textContent = sub.paused ? 'Resume Subscription' : 'Pause Subscription';
+});
+
+// Delete button
 document.getElementById('delete-sub-btn').addEventListener('click', async () => {
     if (!confirm('Are you sure you want to delete this subscription?')) return;
     await deleteSubscription(activeSubId);
@@ -440,7 +498,7 @@ document.getElementById('export-data-btn').addEventListener('click', () => {
 document.getElementById('clear-data-btn').addEventListener('click', async () => {
     if (!confirm('This will delete all your subscriptions, expenses and categories. Your profile will be kept. Continue?')) return;
     await clearAllData();
-    renderApp();
+    await renderApp();
     renderProfilePage();
     alert('All data cleared. Profile kept.');
 });
@@ -462,11 +520,11 @@ cycleSelect.addEventListener('change', e => {
 
 addForm.addEventListener('submit', async e => {
     e.preventDefault();
-    const name      = document.getElementById('add-name').value.trim();
-    let cycle       = document.getElementById('add-cycle').value;
-    const price     = document.getElementById('add-price').value;
-    const startDate = document.getElementById('add-start-date').value;
-    const customDays= document.getElementById('add-custom-days').value;
+    const name       = document.getElementById('add-name').value.trim();
+    let cycle        = document.getElementById('add-cycle').value;
+    const price      = document.getElementById('add-price').value;
+    const startDate  = document.getElementById('add-start-date').value;
+    const customDays = document.getElementById('add-custom-days').value;
     if (!name || !price) return;
     if (cycle === 'Custom') {
         if (!customDays || parseInt(customDays) <= 0) return;
@@ -487,7 +545,7 @@ addForm.addEventListener('submit', async e => {
     document.getElementById('add-start-date').value = todayISO();
     customDaysGroup.style.display = 'none';
     closeAddSheet();
-    renderApp();
+    await renderApp();
 });
 
 // ═══════════════════════════════════════════
@@ -508,7 +566,7 @@ addExpenseForm.addEventListener('submit', async e => {
     addExpenseForm.reset();
     document.getElementById('exp-date').value = todayISO();
     closeAddSheet();
-    renderApp();
+    await renderApp();
 });
 
 // ═══════════════════════════════════════════
@@ -609,7 +667,9 @@ function renderExpensesView() {
         container.appendChild(dayLabel);
         group.items.forEach(exp => {
             const row = document.createElement('div'); row.className = 'exp-row';
-            row.innerHTML = `<span class="exp-name">${exp.name}</span><span class="exp-amount">₹${parseFloat(exp.amount).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 })}</span>`;
+            const nameSpan = document.createElement('span'); nameSpan.className = 'exp-name'; nameSpan.textContent = exp.name;
+            const amtSpan  = document.createElement('span'); amtSpan.className = 'exp-amount'; amtSpan.textContent = '₹' + parseFloat(exp.amount).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
+            row.appendChild(nameSpan); row.appendChild(amtSpan);
             container.appendChild(row);
         });
         if (gi < groups.length - 1) { const div = document.createElement('div'); div.className = 'exp-divider'; container.appendChild(div); }
@@ -625,8 +685,8 @@ async function renderApp() {
     document.getElementById('user-display-name').textContent = profile.name;
     document.getElementById('user-avatar-img').src           = profile.avatar;
 
-    const activeSubs = subscriptions.filter(s => !s.paused);
-    let totalMonthly = activeSubs.reduce((s, sub) => s + getMonthlyCost(sub), 0);
+    const activeSubs   = subscriptions.filter(s => !s.paused);
+    const totalMonthly = activeSubs.reduce((s, sub) => s + getMonthlyCost(sub), 0);
 
     const portfolioList  = document.getElementById('portfolio-list');
     const upcomingScroll = document.getElementById('upcoming-scroll');
@@ -645,36 +705,52 @@ async function renderApp() {
 
     visible.forEach(entry => {
         if (entry._type === 'sub') {
-            const sub = entry.data;
+            const sub   = entry.data;
             const color = colorFromName(sub.name);
             const item  = document.createElement('div');
             item.className = 'list-item';
             if (sub.paused) item.style.opacity = '0.5';
-            item.innerHTML = `
-                <div class="list-item-left">
-                    <div class="list-icon-wrapper" style="background:${color}20;color:${color};font-size:24px;">${sub.name.charAt(0).toUpperCase()}</div>
-                    <div>
-                        <div class="list-title">${sub.name}${sub.paused ? ' <span style="font-size:0.65rem;background:var(--surface-high);color:var(--on-surface-variant);padding:2px 8px;border-radius:99px;font-family:var(--font-body);">Paused</span>' : ''}</div>
-                        <div class="list-subtitle">${formatCycle(sub.cycle)}</div>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <div class="list-price">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits:2 })}</div>
-                    <div class="list-date">${formatDate(sub.dateAdded)}</div>
-                </div>`;
+
+            const left = document.createElement('div'); left.className = 'list-item-left';
+            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
+            icon.style.cssText = `background:${color}20;color:${color};font-size:24px;`;
+            icon.textContent = sub.name.charAt(0).toUpperCase();
+            const info = document.createElement('div');
+            const titleEl = document.createElement('div'); titleEl.className = 'list-title'; titleEl.textContent = sub.name;
+            if (sub.paused) {
+                const badge = document.createElement('span');
+                badge.style.cssText = 'font-size:0.65rem;background:var(--surface-high);color:var(--on-surface-variant);padding:2px 8px;border-radius:99px;font-family:var(--font-body);margin-left:6px;';
+                badge.textContent = 'Paused';
+                titleEl.appendChild(badge);
+            }
+            const subtitleEl = document.createElement('div'); subtitleEl.className = 'list-subtitle'; subtitleEl.textContent = formatCycle(sub.cycle);
+            info.appendChild(titleEl); info.appendChild(subtitleEl);
+            left.appendChild(icon); left.appendChild(info);
+
+            const right = document.createElement('div'); right.className = 'text-right';
+            const priceEl = document.createElement('div'); priceEl.className = 'list-price'; priceEl.textContent = '₹' + parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits:2 });
+            const dateEl  = document.createElement('div'); dateEl.className = 'list-date'; dateEl.textContent = formatDate(sub.dateAdded);
+            right.appendChild(priceEl); right.appendChild(dateEl);
+
+            item.appendChild(left); item.appendChild(right);
             item.addEventListener('click', () => viewDetails(sub.id));
             portfolioList.appendChild(item);
 
             if (!sub.paused) {
                 const today = new Date(); today.setHours(0,0,0,0);
-                const anchor = sub.startDate || sub.dateAdded;
+                const anchor   = sub.startDate || sub.dateAdded;
                 const renDate  = getNextRenewalDate(anchor, sub.cycle);
                 const diffDays = Math.ceil((renDate - today) / 86400000);
                 const renewalText = diffDays > 0 ? `Renews in ${diffDays} day${diffDays > 1 ? 's' : ''}` : 'Renews today';
                 const textColor   = diffDays <= 3 ? 'var(--error)' : 'var(--primary)';
                 const miniCard = document.createElement('div');
                 miniCard.className = 'card-mini';
-                miniCard.innerHTML = `<div class="card-icon" style="background:${color}20;color:${color};"><span class="material-symbols-outlined">payments</span></div><h3>${sub.name}</h3><p style="font-size:0.85rem;color:${textColor};font-weight:600;">${renewalText}</p>`;
+                const cardIcon = document.createElement('div'); cardIcon.className = 'card-icon';
+                cardIcon.style.cssText = `background:${color}20;color:${color};`;
+                cardIcon.innerHTML = '<span class="material-symbols-outlined">payments</span>';
+                const cardName = document.createElement('h3'); cardName.textContent = sub.name;
+                const cardDate = document.createElement('p'); cardDate.style.cssText = `font-size:0.85rem;color:${textColor};font-weight:600;`; cardDate.textContent = renewalText;
+                miniCard.appendChild(cardIcon); miniCard.appendChild(cardName); miniCard.appendChild(cardDate);
                 miniCard.addEventListener('click', () => viewDetails(sub.id));
                 upcomingScroll.appendChild(miniCard);
             }
@@ -682,7 +758,22 @@ async function renderApp() {
             const exp  = entry.data;
             const item = document.createElement('div');
             item.className = 'list-item'; item.style.cursor = 'default';
-            item.innerHTML = `<div class="list-item-left"><div class="list-icon-wrapper" style="background:var(--surface-high);color:var(--on-surface-variant);"><span class="material-symbols-outlined" style="font-size:20px;">receipt_long</span></div><div><div class="list-title">${exp.name}</div><div class="list-subtitle">${formatDate(exp.date)}</div></div></div><div class="text-right"><div class="list-price">₹${parseFloat(exp.amount).toLocaleString('en-IN', { minimumFractionDigits:2 })}</div></div>`;
+
+            const left = document.createElement('div'); left.className = 'list-item-left';
+            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
+            icon.style.cssText = 'background:var(--surface-high);color:var(--on-surface-variant);';
+            icon.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">receipt_long</span>';
+            const info = document.createElement('div');
+            const titleEl    = document.createElement('div'); titleEl.className = 'list-title'; titleEl.textContent = exp.name;
+            const subtitleEl = document.createElement('div'); subtitleEl.className = 'list-subtitle'; subtitleEl.textContent = formatDate(exp.date);
+            info.appendChild(titleEl); info.appendChild(subtitleEl);
+            left.appendChild(icon); left.appendChild(info);
+
+            const right    = document.createElement('div'); right.className = 'text-right';
+            const priceEl  = document.createElement('div'); priceEl.className = 'list-price'; priceEl.textContent = '₹' + parseFloat(exp.amount).toLocaleString('en-IN', { minimumFractionDigits:2 });
+            right.appendChild(priceEl);
+
+            item.appendChild(left); item.appendChild(right);
             portfolioList.appendChild(item);
         }
     });
@@ -690,18 +781,30 @@ async function renderApp() {
     if (mixed.length > 5) {
         const viewAll = document.createElement('div');
         viewAll.style.cssText = 'text-align:center;padding:12px 0 4px;';
-        viewAll.innerHTML = `<a href="#" style="color:var(--primary);font-size:0.85rem;font-weight:600;text-decoration:none;">View all</a>`;
-        viewAll.querySelector('a').addEventListener('click', e => {
+        const link = document.createElement('a');
+        link.href = '#'; link.style.cssText = 'color:var(--primary);font-size:0.85rem;font-weight:600;text-decoration:none;';
+        link.textContent = 'View all';
+        link.addEventListener('click', e => {
             e.preventDefault();
             analyticsView = 'expenses';
             switchPage('analytics-page');
             document.querySelectorAll('.seg-pill').forEach(p => p.classList.toggle('active', p.getAttribute('data-view') === 'expenses'));
         });
+        viewAll.appendChild(link);
         portfolioList.appendChild(viewAll);
     }
 
+    if (upcomingScroll.children.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:10px 20px;color:var(--on-surface-variant);font-size:0.8rem;';
+        empty.textContent = 'Add a subscription to see renewals.';
+        upcomingScroll.appendChild(empty);
+    }
+
     const now = new Date();
-    const thisMonthExpenses = expenses.filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).reduce((s,e) => s + parseFloat(e.amount), 0);
+    const thisMonthExpenses = expenses
+        .filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
+        .reduce((s,e) => s + parseFloat(e.amount), 0);
     document.getElementById('total-spend').textContent = (totalMonthly + thisMonthExpenses).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
     document.getElementById('ytd-spend').textContent   = totalMonthly.toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
@@ -772,7 +875,6 @@ function renderInsights() {
     const cb = totalMonthly + thisMonthExpTotal;
     if (cb > 8000) candidates.push({ score:(cb/500)*60, title:'Total Burn Rate', text:`This month: ₹${fmt(thisMonthExpTotal)} one-time + ₹${fmt(totalMonthly)} subscriptions = ₹${fmt(cb)} combined. That's your real monthly spend.` });
 
-    // Budget limit alerts
     categories.forEach(cat => {
         if (!cat.budget) return;
         const ct = catTotals[cat.id];
@@ -794,7 +896,7 @@ function renderInsights() {
     else { const m = candidates.filter(c => c.score > 300); shown = (m.length > 0 ? m : candidates).slice(0, 3); }
 
     if (shown.length === 0) { card.innerHTML = '<h3 style="margin:0 0 6px;">All Quiet</h3><p style="color:rgba(255,255,255,0.8);font-size:0.875rem;margin:0;">Nothing to flag yet. Add subscriptions and expenses to get personalised insights.</p>'; return; }
-    card.innerHTML = shown.map((insight, i) => `<div style="${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:14px;' : ''}"><h3 style="font-size:1.1rem;line-height:1.3;margin-bottom:6px;position:relative;z-index:2;">${insight.title}</h3><p style="color:rgba(255,255,255,0.8);font-size:0.875rem;line-height:1.5;margin:0;position:relative;z-index:2;">${insight.text}</p></div>`).join('');
+    card.innerHTML = shown.map((insight, i) => `<div style="${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:14px;' : ''}"><h3 style="font-size:1.1rem;line-height:1.3;margin-bottom:6px;position:relative;z-index:2;">${escapeHTML(insight.title)}</h3><p style="color:rgba(255,255,255,0.8);font-size:0.875rem;line-height:1.5;margin:0;position:relative;z-index:2;">${escapeHTML(insight.text)}</p></div>`).join('');
 }
 
 // ═══════════════════════════════════════════
@@ -819,13 +921,14 @@ function renderAnalytics() {
         if (showHeading) {
             const header = document.createElement('h2');
             header.style.cssText = 'cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-top:1rem;margin-bottom:0.5rem;';
-            header.innerHTML = `${name} <span class="material-symbols-outlined" style="font-size:20px;">chevron_right</span>`;
+            const headerText = document.createTextNode(name);
+            const headerIcon = document.createElement('span'); headerIcon.className = 'material-symbols-outlined'; headerIcon.style.fontSize = '20px'; headerIcon.textContent = 'chevron_right';
+            header.appendChild(headerText); header.appendChild(headerIcon);
             header.addEventListener('click', () => {
                 const list = groupEl.querySelector('.cat-list');
-                const icon = header.querySelector('.material-symbols-outlined');
                 const open = list.style.display === 'none';
                 list.style.display = open ? 'block' : 'none';
-                icon.textContent   = open ? 'expand_more' : 'chevron_right';
+                headerIcon.textContent = open ? 'expand_more' : 'chevron_right';
             });
             groupEl.appendChild(header);
         }
@@ -841,7 +944,12 @@ function renderAnalytics() {
             const sub = subscriptions.find(s => s.id === draggedId);
             if (sub && sub.category !== id) { sub.category = id; await upsertSubscription(sub); renderAnalytics(); }
         });
-        if (subs.length === 0 && showHeading) listEl.innerHTML = '<p style="color:var(--on-surface-variant);font-size:0.8rem;text-align:center;padding:10px;">Drag subscriptions here</p>';
+        if (subs.length === 0 && showHeading) {
+            const empty = document.createElement('p');
+            empty.style.cssText = 'color:var(--on-surface-variant);font-size:0.8rem;text-align:center;padding:10px;';
+            empty.textContent = 'Drag subscriptions here';
+            listEl.appendChild(empty);
+        }
         subs.forEach(sub => {
             const color    = colorFromName(sub.name);
             const today    = new Date(); today.setHours(0,0,0,0);
@@ -854,7 +962,22 @@ function renderAnalytics() {
             item.className = 'list-item'; item.draggable = true;
             item.style.cssText = 'cursor:grab;margin-bottom:8px;background:var(--surface-high);';
             if (sub.paused) item.style.opacity = '0.5';
-            item.innerHTML = `<div class="list-item-left"><div class="list-icon-wrapper" style="background:${color}20;color:${color};font-size:20px;width:40px;height:40px;">${sub.name.charAt(0).toUpperCase()}</div><div><div class="list-title" style="font-size:0.95rem;">${sub.name}</div><div class="list-subtitle" style="color:${textColor};font-weight:600;">${renewalText}</div></div></div><div class="text-right"><div class="list-price" style="font-size:1.1rem;">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits:2 })}</div></div>`;
+
+            const left = document.createElement('div'); left.className = 'list-item-left';
+            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
+            icon.style.cssText = `background:${color}20;color:${color};font-size:20px;width:40px;height:40px;`;
+            icon.textContent = sub.name.charAt(0).toUpperCase();
+            const info = document.createElement('div');
+            const titleEl    = document.createElement('div'); titleEl.className = 'list-title'; titleEl.style.fontSize = '0.95rem'; titleEl.textContent = sub.name;
+            const subtitleEl = document.createElement('div'); subtitleEl.className = 'list-subtitle'; subtitleEl.style.cssText = `color:${textColor};font-weight:600;`; subtitleEl.textContent = renewalText;
+            info.appendChild(titleEl); info.appendChild(subtitleEl);
+            left.appendChild(icon); left.appendChild(info);
+
+            const right   = document.createElement('div'); right.className = 'text-right';
+            const priceEl = document.createElement('div'); priceEl.className = 'list-price'; priceEl.style.fontSize = '1.1rem'; priceEl.textContent = '₹' + parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits:2 });
+            right.appendChild(priceEl);
+
+            item.appendChild(left); item.appendChild(right);
             item.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', sub.id));
             listEl.appendChild(item);
         });
@@ -874,18 +997,30 @@ function renderCategoryManager() {
     categories.forEach(cat => {
         const chip = document.createElement('div');
         chip.style.cssText = 'background:var(--surface-high);padding:4px 12px;border-radius:100px;font-size:0.8rem;display:flex;align-items:center;gap:8px;border:1px solid var(--surface-low);';
-        chip.innerHTML = `<span>${cat.name}</span><span class="material-symbols-outlined" style="font-size:14px;cursor:pointer;color:var(--on-surface-variant);" onclick="deleteCategory('${cat.id}')">close</span>`;
+        const nameSpan = document.createElement('span'); nameSpan.textContent = cat.name;
+        const closeBtn = document.createElement('span'); closeBtn.className = 'material-symbols-outlined';
+        closeBtn.style.cssText = 'font-size:14px;cursor:pointer;color:var(--on-surface-variant);';
+        closeBtn.textContent = 'close';
+        closeBtn.onclick = () => window.deleteCategory(cat.id);
+        chip.appendChild(nameSpan); chip.appendChild(closeBtn);
         activeChips.appendChild(chip);
     });
     presetCategories.forEach(preset => {
         if (categories.find(c => c.name.toLowerCase() === preset.toLowerCase())) return;
         const chip = document.createElement('div');
         chip.style.cssText = 'background:transparent;padding:4px 12px;border-radius:100px;font-size:0.8rem;display:flex;align-items:center;gap:4px;border:1px dashed var(--primary);color:var(--primary);cursor:pointer;';
-        chip.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;">add</span><span>${preset}</span>`;
+        const addIcon = document.createElement('span'); addIcon.className = 'material-symbols-outlined'; addIcon.style.fontSize = '14px'; addIcon.textContent = 'add';
+        const labelSpan = document.createElement('span'); labelSpan.textContent = preset;
+        chip.appendChild(addIcon); chip.appendChild(labelSpan);
         chip.onclick = () => addCategoryFn(preset);
         presetChips.appendChild(chip);
     });
-    if (categories.length === 0) activeChips.innerHTML = '<div style="color:var(--on-surface-variant);font-size:0.8rem;">No categories yet</div>';
+    if (categories.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color:var(--on-surface-variant);font-size:0.8rem;';
+        empty.textContent = 'No categories yet';
+        activeChips.appendChild(empty);
+    }
 }
 
 async function addCategoryFn(name) {
@@ -924,7 +1059,7 @@ async function addCategoryFn(name) {
 // ═══════════════════════════════════════════
 // CALENDAR
 // ═══════════════════════════════════════════
-let calYear = new Date().getFullYear();
+let calYear  = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let calSelectedDate = null;
 
@@ -958,7 +1093,7 @@ function renderCalendar() {
     const expenseMap = {};
     expenses.forEach(exp => { const d = new Date(exp.date); if (d.getMonth() === calMonth && d.getFullYear() === calYear) { const key = exp.date.split('T')[0]; expenseMap[key] = (expenseMap[key] || 0) + parseFloat(exp.amount); } });
     const heatBg = spend => { if (spend <= 0) return null; const t = Math.min(spend/1000, 1); return `rgba(105,106,219,${(0.08+t*0.67).toFixed(2)})`; };
-    for (let i = 0; i < firstDay; i++) { const cell = document.createElement('div'); cell.className = 'cal-cell other-month'; cell.innerHTML = `<div class="cal-date">${prevDays - firstDay + 1 + i}</div>`; grid.appendChild(cell); }
+    for (let i = 0; i < firstDay; i++) { const cell = document.createElement('div'); cell.className = 'cal-cell other-month'; const d = document.createElement('div'); d.className = 'cal-date'; d.textContent = prevDays - firstDay + 1 + i; cell.appendChild(d); grid.appendChild(cell); }
     for (let d = 1; d <= daysInMonth; d++) {
         const dateObj = new Date(calYear, calMonth, d); const key = dateObj.toISOString().split('T')[0];
         const subs = renewalMap[key] || []; const dayExpAmt = expenseMap[key] || 0;
@@ -973,7 +1108,7 @@ function renderCalendar() {
         grid.appendChild(cell);
     }
     const trailing = (firstDay + daysInMonth) % 7;
-    if (trailing > 0) { for (let i = 1; i <= 7 - trailing; i++) { const cell = document.createElement('div'); cell.className = 'cal-cell other-month'; cell.innerHTML = `<div class="cal-date">${i}</div>`; grid.appendChild(cell); } }
+    if (trailing > 0) { for (let i = 1; i <= 7 - trailing; i++) { const cell = document.createElement('div'); cell.className = 'cal-cell other-month'; const dn = document.createElement('div'); dn.className = 'cal-date'; dn.textContent = i; cell.appendChild(dn); grid.appendChild(cell); } }
 }
 
 function renderCalendarDetail(dateKey, subs) {
@@ -981,14 +1116,61 @@ function renderCalendarDetail(dateKey, subs) {
     const d = new Date(dateKey); const label = d.toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long' });
     const fmt = n => parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
     const dayExps = expenses.filter(e => e.date.split('T')[0] === dateKey);
-    let html = `<div class="cal-detail-date">${label}</div>`;
-    subs.forEach(sub => { const color = colorFromName(sub.name); html += `<div class="cal-detail-item"><div class="cal-detail-left"><div class="cal-detail-icon" style="background:${color}20;color:${color};">${sub.name.charAt(0).toUpperCase()}</div><div><div class="cal-detail-name">${sub.name}</div><div class="cal-detail-cycle">${formatCycle(sub.cycle)} renewal</div></div></div><div class="cal-detail-price">₹${fmt(sub.price)}</div></div>`; });
+    detail.innerHTML = '';
+
+    const dateDiv = document.createElement('div'); dateDiv.className = 'cal-detail-date'; dateDiv.textContent = label;
+    detail.appendChild(dateDiv);
+
+    subs.forEach(sub => {
+        const color = colorFromName(sub.name);
+        const row = document.createElement('div'); row.className = 'cal-detail-item';
+        const left = document.createElement('div'); left.className = 'cal-detail-left';
+        const icon = document.createElement('div'); icon.className = 'cal-detail-icon';
+        icon.style.cssText = `background:${color}20;color:${color};`; icon.textContent = sub.name.charAt(0).toUpperCase();
+        const info = document.createElement('div');
+        const name = document.createElement('div'); name.className = 'cal-detail-name'; name.textContent = sub.name;
+        const cycle = document.createElement('div'); cycle.className = 'cal-detail-cycle'; cycle.textContent = formatCycle(sub.cycle) + ' renewal';
+        info.appendChild(name); info.appendChild(cycle);
+        left.appendChild(icon); left.appendChild(info);
+        const price = document.createElement('div'); price.className = 'cal-detail-price'; price.textContent = '₹' + fmt(sub.price);
+        row.appendChild(left); row.appendChild(price);
+        detail.appendChild(row);
+    });
+
     if (dayExps.length) {
-        if (subs.length) html += `<div style="border-top:1px solid var(--surface);margin:8px 0 6px;"></div><div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--on-surface-variant);margin-bottom:6px;">One-time expenses</div>`;
-        dayExps.forEach(exp => { html += `<div class="cal-detail-item"><div class="cal-detail-left"><div class="cal-detail-icon" style="background:var(--surface-high);color:var(--on-surface-variant);"><span class="material-symbols-outlined" style="font-size:16px;">receipt_long</span></div><div><div class="cal-detail-name">${exp.name}</div><div class="cal-detail-cycle">One-time expense</div></div></div><div class="cal-detail-price">₹${fmt(exp.amount)}</div></div>`; });
+        if (subs.length) {
+            const sep = document.createElement('div'); sep.style.cssText = 'border-top:1px solid var(--surface);margin:8px 0 6px;'; detail.appendChild(sep);
+            const lbl = document.createElement('div'); lbl.style.cssText = 'font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--on-surface-variant);margin-bottom:6px;'; lbl.textContent = 'One-time expenses'; detail.appendChild(lbl);
+        }
+        dayExps.forEach(exp => {
+            const row = document.createElement('div'); row.className = 'cal-detail-item';
+            const left = document.createElement('div'); left.className = 'cal-detail-left';
+            const icon = document.createElement('div'); icon.className = 'cal-detail-icon';
+            icon.style.cssText = 'background:var(--surface-high);color:var(--on-surface-variant);';
+            icon.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">receipt_long</span>';
+            const info = document.createElement('div');
+            const name = document.createElement('div'); name.className = 'cal-detail-name'; name.textContent = exp.name;
+            const type = document.createElement('div'); type.className = 'cal-detail-cycle'; type.textContent = 'One-time expense';
+            info.appendChild(name); info.appendChild(type);
+            left.appendChild(icon); left.appendChild(info);
+            const price = document.createElement('div'); price.className = 'cal-detail-price'; price.textContent = '₹' + fmt(exp.amount);
+            row.appendChild(left); row.appendChild(price);
+            detail.appendChild(row);
+        });
     }
-    if (subs.length && dayExps.length) { const st = subs.reduce((s,sub) => s+parseFloat(sub.price),0); const et = dayExps.reduce((s,e) => s+parseFloat(e.amount),0); html += `<div style="border-top:1px solid var(--surface);margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;align-items:center;"><div style="font-size:0.75rem;color:var(--on-surface-variant);font-weight:600;">Total today</div><div style="font-size:1rem;font-weight:800;color:var(--primary);">₹${fmt(st+et)}</div></div>`; }
-    detail.innerHTML = html; detail.style.display = 'block';
+
+    if (subs.length && dayExps.length) {
+        const st = subs.reduce((s,sub) => s+parseFloat(sub.price),0);
+        const et = dayExps.reduce((s,e) => s+parseFloat(e.amount),0);
+        const total = document.createElement('div');
+        total.style.cssText = 'border-top:1px solid var(--surface);margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;align-items:center;';
+        const lbl = document.createElement('div'); lbl.style.cssText = 'font-size:0.75rem;color:var(--on-surface-variant);font-weight:600;'; lbl.textContent = 'Total today';
+        const amt  = document.createElement('div'); amt.style.cssText  = 'font-size:1rem;font-weight:800;color:var(--primary);'; amt.textContent = '₹' + fmt(st+et);
+        total.appendChild(lbl); total.appendChild(amt);
+        detail.appendChild(total);
+    }
+
+    detail.style.display = 'block';
     detail.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
@@ -1000,9 +1182,8 @@ document.getElementById('calendar-link').addEventListener('click', e => { e.prev
 // ═══════════════════════════════════════════
 // APP INIT — AUTH STATE LISTENER
 // ═══════════════════════════════════════════
-// Fallback loader timeout
 setTimeout(() => {
-    const loading = document.getElementById('app-loading');
+    const loading    = document.getElementById('app-loading');
     const authScreen = document.getElementById('auth-screen');
     if (!loading.classList.contains('hidden')) {
         loading.classList.add('hidden');
@@ -1011,7 +1192,7 @@ setTimeout(() => {
 }, 3000);
 
 sb.auth.onAuthStateChange(async (event, session) => {
-    const loading  = document.getElementById('app-loading');
+    const loading    = document.getElementById('app-loading');
     const authScreen = document.getElementById('auth-screen');
 
     if (session?.user) {
@@ -1025,7 +1206,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
         await renderApp();
         renderProfilePage();
     } else {
-        currentUser = null;
+        currentUser   = null;
         subscriptions = []; categories = []; expenses = [];
         profile = { name:'Atler', avatar:'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150', theme:'default' };
         loading.classList.add('hidden');
