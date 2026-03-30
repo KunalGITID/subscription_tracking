@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atelier - Subscription Manager</title>
-    <!-- Fonts -->
+    <title>Atler - Subscription Manager</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -19,7 +18,7 @@
             <div class="avatar">
                 <img id="user-avatar-img" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" alt="User Profile">
             </div>
-            <span id="user-display-name">Atelier</span>
+            <span id="user-display-name">Atler</span>
         </div>
         <div>
             <button class="icon-btn">
@@ -29,9 +28,9 @@
     </header>
 
     <div class="container">
+
         <!-- Dashboard Page -->
         <main id="dashboard-page" class="page active">
-            <!-- Hero -->
             <section class="hero-value">
                 <div class="bg-glow"></div>
                 <div class="label">Monthly Expenditure</div>
@@ -45,26 +44,21 @@
                 </div>
             </section>
 
-            <!-- Upcoming Renewals -->
             <section>
                 <div class="section-header">
                     <h2>Upcoming Renewals</h2>
                     <a href="#" class="view-all">Calendar</a>
                 </div>
                 <div class="horizontal-scroll" id="upcoming-scroll">
-                    <!-- Dynamic mini cards -->
                     <div style="padding: 10px 20px; color: var(--on-surface-variant); font-size: 0.8rem;">Add a subscription to see renewals.</div>
                 </div>
             </section>
 
-            <!-- Active Portfolio -->
             <section>
                 <h2>Active Portfolio</h2>
-                <div id="portfolio-list">
-                    <!-- Dynamic Portfolio List -->
-                </div>
+                <div id="portfolio-list"></div>
             </section>
-            
+
             <section class="insights-card">
                 <h3>Insights Ready</h3>
                 <p>Track your subscriptions to find where you can save money this month.</p>
@@ -88,20 +82,22 @@
                     </div>
                 </div>
             </section>
-            
+
             <section>
                 <h2>Billing Cycle</h2>
                 <div class="list-item" style="cursor: default;">
-                     <div class="list-item-left">
-                         <div>
-                             <div class="list-subtitle">Added On</div>
-                             <div class="list-title" id="detail-date">Today</div>
-                         </div>
-                     </div>
-                     <div class="text-right">
-                         <div class="list-subtitle">Status</div>
-                         <div class="list-date" style="color: var(--secondary); font-size: 0.9rem;">Active</div>
-                     </div>
+                    <div class="list-item-left">
+                        <div>
+                            <div class="list-subtitle">Added On</div>
+                            <div class="list-title" id="detail-date" style="margin-bottom: 8px;">Today</div>
+                            <div class="list-subtitle">Next Renewal</div>
+                            <div class="list-title" id="detail-renewal-date">N/A</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="list-subtitle">Status</div>
+                        <div class="list-date" style="color: var(--secondary); font-size: 0.9rem;">Active</div>
+                    </div>
                 </div>
                 <button class="btn-primary" id="delete-sub-btn" style="background: var(--error-bg); color: var(--error); box-shadow: none; border: 1px solid var(--error); margin-top: 20px;">Delete Subscription</button>
             </section>
@@ -109,70 +105,141 @@
 
         <!-- Analytics Page -->
         <main id="analytics-page" class="page">
-            <section class="hero-value">
-                <div class="label">Yearly Spend Estimate</div>
-                <div class="flex items-end gap-2 text-gradient">
-                    <span class="currency">₹</span>
-                    <h1 class="amount" id="ytd-spend">0.00</h1>
-                </div>
-            </section>
 
-            <section>
-                <h2>Quick Breakdown</h2>
-                <div id="analytics-list">
-                    <p style="color: var(--on-surface-variant); font-size: 0.8rem; margin-top: 1rem;">Add data to see distribution.</p>
+            <!-- Segmented Toggle -->
+            <div class="analytics-toggle-wrap">
+                <div class="seg-toggle" id="analytics-seg-toggle">
+                    <button class="seg-pill active" data-view="subscriptions">Subscriptions</button>
+                    <button class="seg-pill" data-view="expenses">Expenses</button>
                 </div>
-            </section>
+            </div>
+
+            <!-- Subscriptions View -->
+            <div id="analytics-subs-view">
+                <section class="hero-value" style="margin-top: 20px;">
+                    <div class="label">Yearly Spend Estimate</div>
+                    <div class="flex items-end gap-2 text-gradient">
+                        <span class="currency">₹</span>
+                        <h1 class="amount" id="ytd-spend">0.00</h1>
+                    </div>
+                </section>
+
+                <section id="category-groups-container"></section>
+
+                <section id="manage-categories-section" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--surface-low);">
+                    <button class="btn" id="toggle-manage-categories-btn" style="display: flex; align-items: center; justify-content: center; gap: 8px; background: transparent; color: var(--on-surface-variant); border: 1px solid var(--surface-low); box-shadow: none; font-size: 0.9rem; padding: 8px 16px; width: 100%;">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">tune</span>
+                        Manage Categories
+                    </button>
+                    <div id="manage-categories-content" style="display: none; margin-top: 20px;">
+                        <h3 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--on-surface-variant);">Active Categories</h3>
+                        <div id="active-category-chips" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;"></div>
+                        <h3 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--on-surface-variant);">Recommended</h3>
+                        <div id="preset-category-chips" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;"></div>
+                        <div class="input-group" style="display: flex; gap: 8px; align-items: stretch; margin-bottom: 0;">
+                            <input type="text" id="add-category-input" placeholder="Custom category..." style="flex: 1; margin-bottom: 0;">
+                            <button class="btn" id="add-category-btn" style="white-space: nowrap; margin: 0;">Add</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Expenses View -->
+            <div id="analytics-expenses-view" style="display:none;">
+                <div class="expenses-month-total">
+                    <div class="label" style="margin-bottom: 6px;">This Month's Expenses</div>
+                    <div class="expenses-total-amount">
+                        <span class="currency" style="font-size: 1.4rem;">₹</span>
+                        <span id="expenses-month-total-val" style="font-size: 2.6rem; font-family: var(--font-headline); font-weight: 800; letter-spacing: -0.04em;">0.00</span>
+                    </div>
+                </div>
+                <div id="expenses-list-container"></div>
+            </div>
+
         </main>
 
-        <!-- Add Page -->
-        <main id="add-page" class="page">
-            <section class="hero-value">
-                 <h2>Add New Subscription</h2>
-                 <p class="label" style="text-transform: none; letter-spacing: normal;">Track your expenses efficiently.</p>
-            </section>
+        <!-- Add Subscription / Expense Bottom Sheet -->
+        <div id="add-sheet-overlay" class="sheet-overlay">
+            <div id="add-sheet" class="bottom-sheet">
+                <div class="sheet-handle" id="sheet-handle"><div class="sheet-pill"></div></div>
+                <div class="sheet-content">
 
-            <section>
-                 <form id="add-form">
-                     <div class="input-group">
-                         <label>Service Name</label>
-                         <input type="text" id="add-name" placeholder="e.g. Netflix, Spotify" autocomplete="off">
-                     </div>
-                     <div class="input-group">
-                         <label>Billing Cycle</label>
-                         <select id="add-cycle">
-                             <option value="Monthly">Monthly</option>
-                             <option value="Yearly">Yearly</option>
-                         </select>
-                     </div>
-                     <div class="input-group">
-                         <label>Price (₹)</label>
-                         <input type="number" id="add-price" placeholder="0.00" step="0.01">
-                     </div>
-                     <button type="submit" class="btn-primary" id="add-sub-btn">Save Subscription</button>
-                 </form>
-            </section>
-        </main>
+                    <!-- Subscription Form -->
+                    <div id="sheet-sub-form">
+                        <h2 style="margin-bottom: 4px;">Add New Subscription</h2>
+                        <p class="label" style="text-transform: none; letter-spacing: normal; margin-bottom: 24px;">Track your recurring expenses.</p>
+                        <form id="add-form">
+                            <div class="input-group">
+                                <label>Service Name</label>
+                                <input type="text" id="add-name" placeholder="e.g. Netflix, Spotify" autocomplete="off">
+                            </div>
+                            <div class="input-group">
+                                <label>Billing Cycle</label>
+                                <select id="add-cycle">
+                                    <option value="Monthly">Monthly</option>
+                                    <option value="Yearly">Yearly</option>
+                                    <option value="Custom">Custom</option>
+                                </select>
+                            </div>
+                            <div class="input-group" id="custom-days-group" style="display: none;">
+                                <label>Renew every (days)</label>
+                                <input type="number" id="add-custom-days" placeholder="e.g. 90" min="1">
+                            </div>
+                            <div class="input-group">
+                                <label>Price (₹)</label>
+                                <input type="number" id="add-price" placeholder="0.00" step="0.01">
+                            </div>
+                            <div class="input-group">
+                                <label>Start Date (Optional)</label>
+                                <input type="date" id="add-start-date">
+                            </div>
+                            <button type="submit" class="btn-primary" id="add-sub-btn">Save Subscription</button>
+                        </form>
+                    </div>
+
+                    <!-- Expense Form -->
+                    <div id="sheet-exp-form" style="display:none;">
+                        <h2 style="margin-bottom: 4px;">Add Expense</h2>
+                        <p class="label" style="text-transform: none; letter-spacing: normal; margin-bottom: 24px;">Log a one-time payment.</p>
+                        <form id="add-expense-form">
+                            <div class="input-group">
+                                <label>Expense Name</label>
+                                <input type="text" id="exp-name" placeholder="e.g. Groceries, Cab ride" autocomplete="off">
+                            </div>
+                            <div class="input-group">
+                                <label>Amount (₹)</label>
+                                <input type="number" id="exp-amount" placeholder="0.00" step="0.01">
+                            </div>
+                            <div class="input-group">
+                                <label>Date</label>
+                                <input type="date" id="exp-date">
+                            </div>
+                            <button type="submit" class="btn-primary">Save Expense</button>
+                        </form>
+                    </div>
+
+                </div>
+            </div>
+        </div>
 
         <!-- Profile Page -->
         <main id="profile-page" class="page">
             <section class="hero-value">
-                 <h2>Your Profile</h2>
-                 <p class="label" style="text-transform: none; letter-spacing: normal;">Manage your details (saved locally).</p>
+                <h2>Your Profile</h2>
+                <p class="label" style="text-transform: none; letter-spacing: normal;">Manage your details (saved locally).</p>
             </section>
-
             <section>
-                 <form id="profile-form">
-                     <div class="input-group">
-                         <label>Display Name</label>
-                         <input type="text" id="profile-name" placeholder="Your Name">
-                     </div>
-                     <div class="input-group">
-                         <label>Avatar URL (Optional)</label>
-                         <input type="url" id="profile-avatar" placeholder="https://...">
-                     </div>
-                     <button type="submit" class="btn-primary">Save Profile</button>
-                 </form>
+                <form id="profile-form">
+                    <div class="input-group">
+                        <label>Display Name</label>
+                        <input type="text" id="profile-name" placeholder="Your Name">
+                    </div>
+                    <div class="input-group">
+                        <label>Avatar URL (Optional)</label>
+                        <input type="url" id="profile-avatar" placeholder="https://...">
+                    </div>
+                    <button type="submit" class="btn-primary">Save Profile</button>
+                </form>
             </section>
         </main>
 
@@ -188,15 +255,30 @@
             <span class="material-symbols-outlined">analytics</span>
             <span class="nav-label">Analytics</span>
         </a>
-        <a href="#" class="nav-item add-btn" data-target="add-page">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add_circle</span>
-        </a>
         <a href="#" class="nav-item" data-target="profile-page">
             <span class="material-symbols-outlined">person</span>
             <span class="nav-label">Profile</span>
         </a>
     </nav>
 
-    <script src="script.js?v=2"></script>
+    <!-- FAB Overlay -->
+    <div id="fab-overlay" class="fab-overlay"></div>
+
+    <!-- Floating Action Button -->
+    <div class="fab-container" id="fab-container">
+        <div class="fab-option" id="fab-option-expense" style="--i: 1;">
+            <span class="material-symbols-outlined">receipt_long</span>
+            <span class="fab-option-label">Expense</span>
+        </div>
+        <div class="fab-option" id="fab-option-sub" style="--i: 2;">
+            <span class="material-symbols-outlined">subscriptions</span>
+            <span class="fab-option-label">Subscription</span>
+        </div>
+        <button class="fab-button" id="fab-btn">
+            <span class="material-symbols-outlined fab-icon">add</span>
+        </button>
+    </div>
+
+    <script src="script.js?v=4"></script>
 </body>
 </html>
