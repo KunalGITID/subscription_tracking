@@ -66,6 +66,7 @@
         </section>
 
         <section class="insights-card" id="insights-card">
+            <div class="label" style="margin-bottom:10px;position:relative;z-index:2;">Smart Insights</div>
             <div id="insights-content"></div>
         </section>
 
@@ -181,22 +182,31 @@
     <!-- PAGE 4: Calendar -->
     <main id="calendar-page" class="page">
 
-        <div class="cal-header">
-            <button class="cal-nav-btn" id="cal-prev">
-                <span class="material-symbols-outlined">chevron_left</span>
-            </button>
-            <h2 id="cal-month-label" class="cal-month-title"></h2>
-            <button class="cal-nav-btn" id="cal-next">
-                <span class="material-symbols-outlined">chevron_right</span>
-            </button>
+        <div style="margin-bottom:12px;">
+            <a href="#" id="cal-back-btn" style="color:var(--on-surface-variant);font-size:0.85rem;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+                <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span>
+                Back
+            </a>
         </div>
 
-        <div class="cal-weekdays">
-            <span>Sun</span><span>Mon</span><span>Tue</span>
-            <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
-        </div>
+        <div class="cal-card">
+            <div class="cal-modal-header">
+                <button class="cal-nav-btn" id="cal-prev">
+                    <span class="material-symbols-outlined">chevron_left</span>
+                </button>
+                <h2 id="cal-month-label" class="cal-month-title"></h2>
+                <button class="cal-nav-btn" id="cal-next">
+                    <span class="material-symbols-outlined">chevron_right</span>
+                </button>
+            </div>
 
-        <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-weekdays">
+                <span>Sun</span><span>Mon</span><span>Tue</span>
+                <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            </div>
+
+            <div class="cal-grid" id="cal-grid"></div>
+        </div>
 
         <div class="cal-detail" id="cal-detail" style="display:none;"></div>
 
