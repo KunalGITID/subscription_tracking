@@ -1197,75 +1197,82 @@ async function withTimeout(promise, ms = 8000) {
     const loading = document.getElementById('app-loading');
     const authScreen = document.getElementById('auth-screen');
 
-    let session = null;
+    const BOOT_TIMEOUT_MS = 1800;
 
-    try {
-        // try a few times before deciding user is logged out
-        for (let i = 0; i < 3; i++) {
-            const res = await sb.auth.getSession();
-            session = res?.data?.session || null;
-            if (session) break;
-            await new Promise(r => setTimeout(r, 500));
-        }
+    const safeBoot = (async () => {
+        const { data: { session } } = await sb.auth.getSession();
 
-        if (session?.user) {
-            currentUser = session.user;
-            authScreen.classList.add('hidden');
-
-            try { await loadAllData(); } catch (_) {}
-            await renderApp();
-            renderProfilePage();
-        } else {
+        if (!session?.user) {
             authScreen.classList.remove('hidden');
+            return;
         }
-    } catch (_) {
-        // important: don't force logout UI on transient iOS startup issue
-        // keep loading briefly then show auth as fallback
-        authScreen.classList.remove('hidden');
-    } finally {
-        loading.classList.add('hidden');
-    }
-})();
 
+        currentUser = session.user;
+        authScreen.classList.add('hidden');
+
+        // Render immediately (no waiting for DB)
+        await renderApp();
+        renderProfilePage();
+
+        // Load real data in background
+        loadAllData()
+            .then(async () => {
+                await renderApp();
+                renderProfilePage();
+            })
+            .catch(() => {});
+    })();
+
+    await Promise.race([
+        safeBoot,
+        new Promise(resolve => setTimeout(resolve, BOOT_TIMEOUT_MS))
+    ]);
+
+    loading.classList.add('hidden');
+})();
 
 // AUTH STATE CHANGES
 sb.auth.onAuthStateChange(async (event, session) => {
     const loading = document.getElementById('app-loading');
     const authScreen = document.getElementById('auth-screen');
 
-    if (event === 'SIGNED_IN' && session?.user) {
-        if (currentUser?.id === session.user.id) return;
+   if (event === 'SIGNED_IN' && session?.user) {
+    if (currentUser?.id === session.user.id) return;
+    currentUser = session.user;
+    authScreen.classList.add('hidden');
+    loading.classList.add('hidden');
 
-        currentUser = session.user;
-        authScreen.classList.add('hidden');
-        loading.classList.remove('hidden');
+    await renderApp();
+    renderProfilePage();
 
-        try {
-            await withTimeout(loadAllData(), 10000);
+    loadAllData()
+        .then(async () => {
             await renderApp();
             renderProfilePage();
-        } catch (_) {
+        })
+        .catch(() => {});
+    return;
+}
+
+
+ if (event === 'SIGNED_IN' && session?.user) {
+    if (currentUser?.id === session.user.id) return;
+    currentUser = session.user;
+    authScreen.classList.add('hidden');
+    loading.classList.add('hidden');
+
+    await renderApp();
+    renderProfilePage();
+
+    loadAllData()
+        .then(async () => {
             await renderApp();
             renderProfilePage();
-        } finally {
-            loading.classList.add('hidden');
-        }
-        return;
-    }
+        })
+        .catch(() => {});
+    return;
+}
 
-    if (event === 'SIGNED_OUT') {
-        currentUser = null;
-        subscriptions = [];
-        categories = [];
-        expenses = [];
-        profile = {
-            name: 'Atler',
-            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
-            theme: 'default'
-        };
-        loading.classList.add('hidden');
-        authScreen.classList.remove('hidden');
-    }
 });
 
 
