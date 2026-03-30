@@ -1,12 +1,13 @@
 // Atler Service Worker — Cache-first for static assets, network-first for Supabase API
-const CACHE_NAME = 'atler-v4';
+const CACHE_NAME = 'atler-v11';
 
 // Assets to pre-cache on install (shell of the app)
 const STATIC_ASSETS = [
-  '/index.html',
-  '/style.css?v=7',
-  '/script.js?v=9',
-  '/manifest.json',
+  './',
+  './index.html',
+  './style.css?v=11',
+  './script.js?v=11',
+  './manifest.json',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js',
 ];
 
