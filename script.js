@@ -1254,7 +1254,7 @@ function startBootNoise() {
     return () => clearInterval(timer);
 }
 
-async function runBootWithLoader(bootFn, minVisible = 6800) {
+async function runBootWithLoader(bootFn, minVisible = 3800) {
     const loading = document.getElementById('app-loading');
     const statusEl = document.getElementById('boot-status');
     const startTime = Date.now();
@@ -1267,7 +1267,7 @@ async function runBootWithLoader(bootFn, minVisible = 6800) {
         
         // Run the boot function with a 10s safety timeout to prevent getting "stuck"
         const bootPromise = bootFn();
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 15000));
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 10000));
         
         // While waiting, show some more flavor messages if it's taking a bit
         const flavorTimer = setTimeout(() => {
@@ -1278,13 +1278,13 @@ async function runBootWithLoader(bootFn, minVisible = 6800) {
         if (minVisible > 3000) {
             setTimeout(() => {
                  decodeStatus(statusEl, "UPLINKING ACCOUNTS...", 600);
-            }, 3200);
+            }, 1800);
             setTimeout(() => {
                  decodeStatus(statusEl, "OPTIMIZING DASHBOARD...", 600);
-            }, 5500);
+            }, 3800);
             setTimeout(() => {
                  decodeStatus(statusEl, "FINALIZING SYSTEM SYNC...", 600);
-            }, 8000);
+            }, 5500);
         }
 
         await Promise.race([bootPromise, timeoutPromise]);
@@ -1348,7 +1348,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
             await loadAllData();
             await renderApp();
             renderProfilePage();
-        }, 10000);
+        }, 7000);
     }
 
     if (event === 'SIGNED_OUT') {
