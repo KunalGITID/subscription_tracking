@@ -600,6 +600,294 @@ function renderApp() {
     document.getElementById('ytd-spend').textContent = totalMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     renderAnalyticsView();
+    renderInsights();
+}
+
+// --- Insights Engine ---
+function renderInsights() {
+    const card    = document.getElementById('insights-content');
+    if (!card) return;
+
+    const now          = new Date();
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+
+    // Pre-compute shared values
+    const totalMonthly  = subscriptions.reduce((s, sub) => s + getMonthlyCost(sub), 0);
+    const totalYearly   = totalMonthly * 12;
+    const subCount      = subscriptions.length;
+    const manualExp     = expenses.filter(e => e.type === 'manual');
+
+    // Weekly expense windows
+    const msDay         = 86400000;
+    const weekAgoMs     = now.getTime() - 7  * msDay;
+    const twoWeeksAgoMs = now.getTime() - 14 * msDay;
+    const thisWeekExps  = manualExp.filter(e => new Date(e.date).getTime() >= weekAgoMs);
+    const lastWeekExps  = manualExp.filter(e => {
+        const t = new Date(e.date).getTime();
+        return t >= twoWeeksAgoMs && t < weekAgoMs;
+    });
+    const thisWeekTotal = thisWeekExps.reduce((s,e) => s + parseFloat(e.amount), 0);
+    const lastWeekTotal = lastWeekExps.reduce((s,e) => s + parseFloat(e.amount), 0);
+
+    // This month expenses
+    const thisMonthExp = manualExp.filter(e => {
+        const d = new Date(e.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    const thisMonthExpTotal = thisMonthExp.reduce((s,e) => s + parseFloat(e.amount), 0);
+
+    // Renewal info
+    const renewalsToday = [];
+    const renewalsSoon  = []; // {sub, diffDays}
+    subscriptions.forEach(sub => {
+        const anchor  = sub.startDate || sub.dateAdded;
+        const next    = getNextRenewalDate(anchor, sub.cycle);
+        const diff    = Math.ceil((next - todayMidnight) / msDay);
+        if (diff === 0) renewalsToday.push(sub);
+        else if (diff >= 1 && diff <= 3) renewalsSoon.push({ sub, diffDays: diff });
+    });
+
+    // Category totals
+    const catTotals = {}; // catId -> {name, total, count}
+    subscriptions.forEach(sub => {
+        const cid  = sub.category || 'unlisted';
+        const cname = cid === 'unlisted' ? 'Unlisted'
+            : (categories.find(c => c.id === cid)?.name || 'Unlisted');
+        if (!catTotals[cid]) catTotals[cid] = { name: cname, total: 0, count: 0 };
+        catTotals[cid].total += getMonthlyCost(sub);
+        catTotals[cid].count++;
+    });
+
+    // Oldest sub
+    let oldestSub = null, oldestDays = 0;
+    subscriptions.forEach(sub => {
+        const days = Math.floor((now - new Date(sub.dateAdded)) / msDay);
+        if (days > oldestDays) { oldestDays = days; oldestSub = sub; }
+    });
+
+    // Next renewal anywhere
+    let nextRenewalDays = Infinity;
+    subscriptions.forEach(sub => {
+        const anchor = sub.startDate || sub.dateAdded;
+        const diff   = Math.ceil((getNextRenewalDate(anchor, sub.cycle) - todayMidnight) / msDay);
+        if (diff < nextRenewalDays) nextRenewalDays = diff;
+    });
+
+    // fmt helper
+    const fmt = (n) => parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // ── Build candidate insight list ──────────────────────────────────────────
+    const candidates = [];
+
+    // 1. EMPTY STATE
+    if (subCount === 0 && manualExp.length === 0) {
+        candidates.push({
+            score: 1000,
+            solo:  true,
+            title: 'Broke or Just Shy?',
+            text:  "No transactions yet. Either you live off the grid or you forgot to add everything. We don't judge. Much."
+        });
+    }
+
+    // 2. EXPENSES BUT NO SUBSCRIPTIONS
+    if (manualExp.length > 0 && subCount === 0) {
+        candidates.push({
+            score: 900,
+            solo:  true,
+            title: 'Spending Without Tracking',
+            text:  "You're logging one-time expenses but haven't added recurring subscriptions yet. Add them to see the real damage."
+        });
+    }
+
+    // 3. RENEWS TODAY
+    if (renewalsToday.length > 0) {
+        const total = renewalsToday.reduce((s, sub) => s + parseFloat(sub.price), 0);
+        const score = 850 + (renewalsToday.length - 1) * 50;
+        let text;
+        if (renewalsToday.length === 1) {
+            text = `${renewalsToday[0].name} renews today. ₹${fmt(renewalsToday[0].price)} is already gone or going. Moment of silence.`;
+        } else {
+            text = `${renewalsToday[0].name} renews today. ₹${fmt(renewalsToday[0].price)} is leaving — plus ${renewalsToday.length - 1} more renewal${renewalsToday.length > 2 ? 's' : ''} today totaling ₹${fmt(total)}.`;
+        }
+        candidates.push({ score, title: 'Money Leaving Right Now', text });
+    }
+
+    // 4. RENEWS IN 1-3 DAYS
+    if (renewalsSoon.length > 0) {
+        const soonest = renewalsSoon.sort((a,b) => a.diffDays - b.diffDays)[0];
+        const score   = 700 + (3 - soonest.diffDays) * 50;
+        candidates.push({
+            score,
+            title: 'Renewal Incoming',
+            text:  `${soonest.sub.name} hits your wallet in ${soonest.diffDays} day${soonest.diffDays > 1 ? 's' : ''} — ₹${fmt(soonest.sub.price)}. Start mentally preparing.`
+        });
+    }
+
+    // 5. DOMINANT SUBSCRIPTION
+    if (subCount > 1 && totalMonthly > 0) {
+        let domSub = null, domPct = 0;
+        subscriptions.forEach(sub => {
+            const pct = getMonthlyCost(sub) / totalMonthly * 100;
+            if (pct > domPct) { domPct = pct; domSub = sub; }
+        });
+        if (domPct > 50) {
+            const score = domPct * 8;
+            candidates.push({
+                score,
+                title: 'One Sub to Rule Them All',
+                text:  `${domSub.name} is ${Math.round(domPct)}% of your monthly spend. That's ₹${fmt(getMonthlyCost(domSub))} out of ₹${fmt(totalMonthly)}. At this point just marry it.`
+            });
+        }
+    }
+
+    // 6. CATEGORY OBSESSION
+    Object.values(catTotals).forEach(cat => {
+        if (cat.count > 2) {
+            candidates.push({
+                score: 400 + cat.count * 30,
+                title: 'Category Obsession',
+                text:  `You have ${cat.count} ${cat.name} subscriptions worth ₹${fmt(cat.total)} per month. We get it. You really love ${cat.name}.`
+            });
+        }
+    });
+
+    // 7. LOYALTY OR LAZINESS
+    if (oldestSub && oldestDays >= 365) {
+        const months    = Math.floor(oldestDays / 30);
+        const totalPaid = getMonthlyCost(oldestSub) * months;
+        const years     = oldestDays / 365;
+        candidates.push({
+            score: 350 + years * 40,
+            title: 'Loyalty or Laziness?',
+            text:  `You've had ${oldestSub.name} for ${months} months. Either you love it or forgot it exists. It has cost you an estimated ₹${fmt(totalPaid)} so far.`
+        });
+    }
+
+    // 8. SUBSCRIPTION HOARDER
+    if (subCount > 4) {
+        candidates.push({
+            score: subCount * 45,
+            title: 'Subscription Hoarder',
+            text:  `You have ${subCount} active subscriptions burning ₹${fmt(totalMonthly)}/mo. The average person uses about 3 actively. Think about that.`
+        });
+    }
+
+    // 9. MONTHLY SPEND HIGH
+    if (totalMonthly > 3000) {
+        const score = (totalMonthly / 1000) * 60;
+        candidates.push({
+            score,
+            title: 'Big Spender Energy',
+            text:  `You're spending ₹${fmt(totalMonthly)}/mo. That's ₹${fmt(totalYearly)}/year. That's ${(totalYearly / 6000).toFixed(1)} months of rent. Or ${Math.round(totalYearly / 250)} plates of biryani. Your call.`
+        });
+    }
+
+    // 10. YEARLY ESTIMATE HIGH
+    if (totalYearly > 10000) {
+        const score   = (totalYearly / 5000) * 40;
+        const weekly  = totalMonthly * 12 / 52;
+        const daily   = totalMonthly * 12 / 365;
+        candidates.push({
+            score,
+            title: 'Annual Reality Check',
+            text:  `You're on track for ₹${fmt(totalYearly)} this year on subscriptions alone. Breaking it down: ₹${fmt(totalMonthly)}/mo, ₹${fmt(weekly)}/week, ₹${fmt(daily)}/day. Every. Single. Day.`
+        });
+    }
+
+    // 11. SOLO SUBSCRIBER
+    if (subCount === 1) {
+        candidates.push({
+            score: 200,
+            title: 'Baby Steps',
+            text:  "One subscription tracked. Either you're a minimalist legend or this is just the beginning of a very expensive list."
+        });
+    }
+
+    // 12. ALL GOOD
+    if (subCount > 0) {
+        const nrDays = nextRenewalDays === Infinity ? 'N/A' : `${nextRenewalDays} day${nextRenewalDays !== 1 ? 's' : ''}`;
+        candidates.push({
+            score: 100,
+            title: 'Looking Clean 👀',
+            text:  `Spending looks controlled. ${subCount} subscription${subCount !== 1 ? 's' : ''}, ₹${fmt(totalMonthly)}/mo, next renewal in ${nrDays}. Either you're disciplined or haven't added everything yet.`
+        });
+    }
+
+    // 13. EXPENSE SPIKE
+    if (lastWeekTotal > 0 && thisWeekTotal > lastWeekTotal * 2) {
+        const ratio = thisWeekTotal / lastWeekTotal;
+        candidates.push({
+            score: ratio * 200,
+            title: 'Spending Spike Detected',
+            text:  `Your one-time expenses this week are ${ratio.toFixed(1)}x higher than last week. ₹${fmt(thisWeekTotal)} vs ₹${fmt(lastWeekTotal)}. Something happened. We're not asking questions.`
+        });
+    }
+
+    // 14. CATEGORY BUDGET LEAK
+    if (totalMonthly > 0) {
+        let leakCat = null, leakPct = 0;
+        Object.values(catTotals).forEach(cat => {
+            const pct = cat.total / totalMonthly * 100;
+            if (pct > leakPct) { leakPct = pct; leakCat = cat; }
+        });
+        if (leakCat && leakPct > 40) {
+            candidates.push({
+                score: 450,
+                title: `${leakCat.name} is Draining You`,
+                text:  `Your ${leakCat.name} subscriptions alone cost ₹${fmt(leakCat.total)}/mo — ${Math.round(leakPct)}% of your total. Consider if you need all ${leakCat.count} of them.`
+            });
+        }
+    }
+
+    // 15. EXPENSE FREQUENCY PATTERN
+    if (thisWeekExps.length > 3) {
+        const dailyAvg        = thisWeekTotal / 7;
+        const monthlyProjection = dailyAvg * 30;
+        candidates.push({
+            score: 380,
+            title: 'Daily Spending Habit',
+            text:  `You've logged ${thisWeekExps.length} expenses this week averaging ₹${fmt(dailyAvg)}/day on one-time purchases. At this pace that's ₹${fmt(monthlyProjection)} extra this month on top of subscriptions.`
+        });
+    }
+
+    // 16. COMBINED BURN RATE
+    const combinedBurn = totalMonthly + thisMonthExpTotal;
+    if (combinedBurn > 8000) {
+        const score = (combinedBurn / 500) * 60;
+        candidates.push({
+            score,
+            title: 'Total Burn Rate',
+            text:  `This month you've spent ₹${fmt(thisMonthExpTotal)} on one-time purchases plus ₹${fmt(totalMonthly)}/mo on subscriptions. Combined burn: ₹${fmt(combinedBurn)}. That's your real monthly spend.`
+        });
+    }
+
+    // ── Select which insights to show ────────────────────────────────────────
+    candidates.sort((a, b) => b.score - a.score);
+
+    let shown = [];
+    if (candidates.length === 0) {
+        shown = [];
+    } else if (candidates[0].solo) {
+        shown = [candidates[0]];
+    } else {
+        // Filter out any ALL GOOD (score 100) if anything else scores above 300
+        const meaningful = candidates.filter(c => c.score > 300);
+        const pool = meaningful.length > 0 ? meaningful : candidates;
+        shown = pool.slice(0, 3);
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+    if (shown.length === 0) {
+        card.innerHTML = '<h3 style="margin:0 0 6px;">All Quiet</h3><p style="color:rgba(255,255,255,0.8);font-size:0.875rem;margin:0;">Nothing to flag yet. Add subscriptions and expenses to get personalised insights.</p>';
+        return;
+    }
+
+    card.innerHTML = shown.map((insight, i) => `
+        <div style="${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:14px;' : ''}">
+            <h3 style="font-size:1.1rem;line-height:1.3;margin-bottom:6px;position:relative;z-index:2;">${insight.title}</h3>
+            <p style="color:rgba(255,255,255,0.8);font-size:0.875rem;line-height:1.5;margin:0;position:relative;z-index:2;">${insight.text}</p>
+        </div>
+    `).join('');
 }
 
 // --- Category Management ---
