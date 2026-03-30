@@ -5,42 +5,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atler</title>
+
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0e0e0e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Atler">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800;900&display=swap"
         rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5">
+
+    <!-- Theme preload (must run before CSS paint) -->
     <script>
-(function () {
-  const saved = localStorage.getItem('atler_theme');
-  if (!saved) return;
+    (function () {
+      const saved = localStorage.getItem('atler_theme');
+      if (!saved) return;
 
-  const themes = {
-    default:  { primary:'#c0c1ff', primaryContainer:'#4b4dd8', primaryGlow:'rgba(192,193,255,0.4)', secondary:'#4edea3', secondaryGlow:'rgba(78,222,163,0.2)' },
-    midnight: { primary:'#4fc3f7', primaryContainer:'#0d47a1', primaryGlow:'rgba(79,195,247,0.4)',  secondary:'#80deea', secondaryGlow:'rgba(128,222,234,0.2)' },
-    rose:     { primary:'#f48fb1', primaryContainer:'#880e4f', primaryGlow:'rgba(244,143,177,0.4)', secondary:'#f06292', secondaryGlow:'rgba(240,98,146,0.2)' },
-    forest:   { primary:'#81c784', primaryContainer:'#1b5e20', primaryGlow:'rgba(129,199,132,0.4)', secondary:'#aed581', secondaryGlow:'rgba(174,213,129,0.2)' },
-    amber:    { primary:'#ffcc02', primaryContainer:'#e65100', primaryGlow:'rgba(255,204,2,0.4)',   secondary:'#ffb300', secondaryGlow:'rgba(255,179,0,0.2)' }
-  };
+      const themes = {
+        default:  { primary:'#c0c1ff', primaryContainer:'#4b4dd8', primaryGlow:'rgba(192,193,255,0.4)', secondary:'#4edea3', secondaryGlow:'rgba(78,222,163,0.2)' },
+        midnight: { primary:'#4fc3f7', primaryContainer:'#0d47a1', primaryGlow:'rgba(79,195,247,0.4)',  secondary:'#80deea', secondaryGlow:'rgba(128,222,234,0.2)' },
+        rose:     { primary:'#f48fb1', primaryContainer:'#880e4f', primaryGlow:'rgba(244,143,177,0.4)', secondary:'#f06292', secondaryGlow:'rgba(240,98,146,0.2)' },
+        forest:   { primary:'#81c784', primaryContainer:'#1b5e20', primaryGlow:'rgba(129,199,132,0.4)', secondary:'#aed581', secondaryGlow:'rgba(174,213,129,0.2)' },
+        amber:    { primary:'#ffcc02', primaryContainer:'#e65100', primaryGlow:'rgba(255,204,2,0.4)',   secondary:'#ffb300', secondaryGlow:'rgba(255,179,0,0.2)' }
+      };
 
-  const t = themes[saved] || themes.default;
-  const r = document.documentElement.style;
-  r.setProperty('--primary', t.primary);
-  r.setProperty('--primary-container', t.primaryContainer);
-  r.setProperty('--primary-glow', t.primaryGlow);
-  r.setProperty('--secondary', t.secondary);
-  r.setProperty('--secondary-glow', t.secondaryGlow);
-})();
-</script>
+      const t = themes[saved] || themes.default;
+      const r = document.documentElement.style;
+      r.setProperty('--primary', t.primary);
+      r.setProperty('--primary-container', t.primaryContainer);
+      r.setProperty('--primary-glow', t.primaryGlow);
+      r.setProperty('--secondary', t.secondary);
+      r.setProperty('--secondary-glow', t.secondaryGlow);
+    })();
+    </script>
+
+    <link rel="stylesheet" href="style.css?v=6">
 
     <style>
         #auth-screen {
@@ -158,44 +164,61 @@
             min-height: 20px;
         }
 
+        /* Custom boot loader */
         #app-loading {
             position: fixed;
             inset: 0;
-            background: var(--bg-color);
+            background: radial-gradient(1200px 600px at 20% 80%, rgba(75, 77, 216, 0.18), transparent 60%), var(--bg-color);
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: flex-end;
+            justify-content: flex-start;
             z-index: 9998;
-            flex-direction: column;
-            gap: 16px;
+            padding: 20px;
         }
 
         #app-loading.hidden {
             display: none;
         }
 
-        .spinner {
-            width: 36px;
-            height: 36px;
-            border: 3px solid var(--surface-high);
-            border-top-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+        .boot-noise {
+            position: absolute;
+            left: 20px;
+            bottom: 72px;
+            width: min(80vw, 500px);
+            min-height: 48px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: rgba(192, 193, 255, 0.75);
+            letter-spacing: 0.04em;
+            white-space: pre-wrap;
+            user-select: none;
         }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+        .boot-panel {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
 
-        .loading-text {
-            font-size: 0.85rem;
-            color: var(--on-surface-variant);
+        .boot-brand {
             font-family: var(--font-headline);
+            font-weight: 900;
+            font-size: 18px;
+            color: var(--primary);
+            letter-spacing: 0.08em;
+        }
+
+        .boot-status {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            color: var(--on-surface-variant);
         }
     </style>
 </head>
+
 
 <body>
 <div id="app-loading">
