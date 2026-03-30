@@ -146,6 +146,7 @@ function switchPage(targetId) {
     if (target) {
         target.classList.add('active');
         if (targetId === 'dashboard-page' || targetId === 'analytics-page') renderApp();
+        if (targetId === 'calendar-page') renderCalendar();
     }
     window.scrollTo(0, 0);
 }
@@ -797,3 +798,176 @@ renderApp();
         switchPage(swipePageOrder[nextIdx]);
     }, { passive: true });
 })();
+
+// --- Calendar ---
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let calSelectedDate = null;
+
+function buildRenewalMap(year, month) {
+    const map = {};
+    const monthStart = new Date(year, month, 1);
+    const monthEnd   = new Date(year, month + 1, 0);
+
+    subscriptions.forEach(sub => {
+        const anchor = sub.startDate || sub.dateAdded;
+        const start  = new Date(anchor);
+        start.setHours(0, 0, 0, 0);
+
+        let cursor = new Date(start);
+
+        if (sub.cycle === 'Yearly') {
+            while (cursor < monthStart) cursor.setFullYear(cursor.getFullYear() + 1);
+        } else {
+            const inc = sub.cycle === 'Monthly' ? 30 : parseInt(sub.cycle);
+            while (cursor < monthStart) cursor.setDate(cursor.getDate() + inc);
+        }
+
+        while (cursor <= monthEnd) {
+            const key = cursor.toISOString().split('T')[0];
+            if (!map[key]) map[key] = [];
+            map[key].push(sub);
+            cursor = new Date(cursor);
+            if (sub.cycle === 'Yearly') {
+                cursor.setFullYear(cursor.getFullYear() + 1);
+            } else {
+                const inc = sub.cycle === 'Monthly' ? 30 : parseInt(sub.cycle);
+                cursor.setDate(cursor.getDate() + inc);
+            }
+        }
+    });
+    return map;
+}
+
+function renderCalendar() {
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    document.getElementById('cal-month-label').textContent = `${monthNames[calMonth]} ${calYear}`;
+
+    const grid   = document.getElementById('cal-grid');
+    const detail = document.getElementById('cal-detail');
+    grid.innerHTML = '';
+    detail.style.display = 'none';
+    calSelectedDate = null;
+
+    const renewalMap  = buildRenewalMap(calYear, calMonth);
+    const firstDay    = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const prevDays    = new Date(calYear, calMonth, 0).getDate();
+    const today       = new Date(); today.setHours(0,0,0,0);
+
+    // Leading cells (prev month)
+    for (let i = 0; i < firstDay; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell other-month';
+        cell.innerHTML = `<div class="cal-date">${prevDays - firstDay + 1 + i}</div>`;
+        grid.appendChild(cell);
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateObj = new Date(calYear, calMonth, d);
+        const key     = dateObj.toISOString().split('T')[0];
+        const subs    = renewalMap[key] || [];
+        const isToday = dateObj.getTime() === today.getTime();
+
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell'
+            + (subs.length ? ' has-events' : '')
+            + (isToday     ? ' today'      : '');
+
+        const dateEl = document.createElement('div');
+        dateEl.className = 'cal-date';
+        dateEl.textContent = d;
+        cell.appendChild(dateEl);
+
+        if (subs.length) {
+            const dotsEl = document.createElement('div');
+            dotsEl.className = 'cal-dots';
+            subs.slice(0, 3).forEach(sub => {
+                const dot = document.createElement('div');
+                dot.className = 'cal-dot';
+                dot.style.background = colorFromName(sub.name);
+                dotsEl.appendChild(dot);
+            });
+            cell.appendChild(dotsEl);
+
+            cell.addEventListener('click', () => {
+                if (calSelectedDate === key) {
+                    calSelectedDate = null;
+                    grid.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('selected'));
+                    detail.style.display = 'none';
+                    return;
+                }
+                calSelectedDate = key;
+                grid.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('selected'));
+                cell.classList.add('selected');
+                renderCalendarDetail(key, subs);
+            });
+        }
+
+        grid.appendChild(cell);
+    }
+
+    // Trailing cells (next month)
+    const trailing = (firstDay + daysInMonth) % 7;
+    if (trailing > 0) {
+        for (let i = 1; i <= 7 - trailing; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cal-cell other-month';
+            cell.innerHTML = `<div class="cal-date">${i}</div>`;
+            grid.appendChild(cell);
+        }
+    }
+}
+
+function renderCalendarDetail(dateKey, subs) {
+    const detail = document.getElementById('cal-detail');
+    const d = new Date(dateKey);
+    const label = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    let html = `<div class="cal-detail-date">${label}</div>`;
+    subs.forEach(sub => {
+        const color = colorFromName(sub.name);
+        html += `
+            <div class="cal-detail-item">
+                <div class="cal-detail-left">
+                    <div class="cal-detail-icon" style="background:${color}20;color:${color};">
+                        ${sub.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div class="cal-detail-name">${sub.name}</div>
+                        <div class="cal-detail-cycle">${formatCycle(sub.cycle)}</div>
+                    </div>
+                </div>
+                <div class="cal-detail-price">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            </div>`;
+    });
+
+    detail.innerHTML = html;
+    detail.style.display = 'block';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('cal-prev').addEventListener('click', () => {
+    calMonth--;
+    if (calMonth < 0) { calMonth = 11; calYear--; }
+    renderCalendar();
+});
+
+document.getElementById('cal-next').addEventListener('click', () => {
+    calMonth++;
+    if (calMonth > 11) { calMonth = 0; calYear++; }
+    renderCalendar();
+});
+
+document.getElementById('calendar-link').addEventListener('click', e => {
+    e.preventDefault();
+    switchPage('calendar-page');
+    renderCalendar();
+});
+
+// Re-render calendar when switching to it via nav tab
+document.querySelectorAll('.nav-item[data-target="calendar-page"]').forEach(el => {
+    el.addEventListener('click', () => renderCalendar());
+});
