@@ -1200,45 +1200,111 @@ async function withTimeout(promise, ms = 8000) {
         clearTimeout(timer);
     }
 }
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+const BOOT_MESSAGES = [
+  "Initializing ATŁER...",
+  "Checking secure session...",
+  "Syncing subscriptions...",
+  "Preparing dashboard..."
+];
+
+function randomNoiseLine(len = 42) {
+  const chars = "^%*&()_+-=[]{}|;:,.<>?/\\";
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+function startBootDecoder() {
+  const noiseEl = document.getElementById("boot-noise");
+  const statusEl = document.getElementById("boot-status");
+  let msgIndex = 0;
+
+  const noiseTimer = setInterval(() => {
+    if (!noiseEl) return;
+    noiseEl.textContent = `${randomNoiseLine()}\n${randomNoiseLine(34)}\n${randomNoiseLine(28)}`;
+  }, 90);
+
+  const statusTimer = setInterval(() => {
+    if (!statusEl) return;
+    statusEl.textContent = BOOT_MESSAGES[msgIndex % BOOT_MESSAGES.length];
+    msgIndex++;
+  }, 900);
+
+  return () => {
+    clearInterval(noiseTimer);
+    clearInterval(statusTimer);
+    if (noiseEl) noiseEl.textContent = "Decoded: INITIALIZING ATŁER";
+  };
+}
+async function runBootWithLoader(bootFn) {
+  const loading = document.getElementById('app-loading');
+  const text = document.getElementById('boot-status');
+  const start = Date.now();
+  let slowTimer;
+
+  loading.classList.remove('hidden');
+  if (text) text.textContent = 'Initializing ATŁER...';
+
+  const stopDecoder = startBootDecoder(); // <-- here
+
+  slowTimer = setTimeout(() => {
+    if (text) text.textContent = 'Syncing your data...';
+  }, 2500);
+
+  try {
+    await bootFn();
+  } finally {
+    clearTimeout(slowTimer);
+    stopDecoder(); // <-- here
+
+    const minVisible = 1200;
+    const elapsed = Date.now() - start;
+    if (elapsed < minVisible) await sleep(minVisible - elapsed);
+
+    loading.classList.add('hidden');
+  }
+}
+
 
 // APP INIT
 (async () => {
-    const loading = document.getElementById('app-loading');
+  await runBootWithLoader(async () => {
     const authScreen = document.getElementById('auth-screen');
 
     const BOOT_TIMEOUT_MS = 1800;
 
     const safeBoot = (async () => {
-        const { data: { session } } = await sb.auth.getSession();
+      const { data: { session } } = await sb.auth.getSession();
 
-        if (!session?.user) {
-            authScreen.classList.remove('hidden');
-            return;
-        }
+      if (!session?.user) {
+        authScreen.classList.remove('hidden');
+        return;
+      }
 
-        currentUser = session.user;
-        authScreen.classList.add('hidden');
+      currentUser = session.user;
+      authScreen.classList.add('hidden');
 
-        // Render immediately (no waiting for DB)
-        await renderApp();
-        renderProfilePage();
+      await renderApp();
+      renderProfilePage();
 
-        // Load real data in background
-        loadAllData()
-            .then(async () => {
-                await renderApp();
-                renderProfilePage();
-            })
-            .catch(() => {});
+      loadAllData()
+        .then(async () => {
+          await renderApp();
+          renderProfilePage();
+        })
+        .catch(() => {});
     })();
 
     await Promise.race([
-        safeBoot,
-        new Promise(resolve => setTimeout(resolve, BOOT_TIMEOUT_MS))
+      safeBoot,
+      new Promise(resolve => setTimeout(resolve, BOOT_TIMEOUT_MS))
     ]);
-
-    loading.classList.add('hidden');
+  });
 })();
+
 
 // AUTH STATE CHANGES
 sb.auth.onAuthStateChange(async (event, session) => {
@@ -1264,22 +1330,20 @@ sb.auth.onAuthStateChange(async (event, session) => {
 }
 
 
- if (event === 'SIGNED_IN' && session?.user) {
-    if (currentUser?.id === session.user.id) return;
-    currentUser = session.user;
-    authScreen.classList.add('hidden');
+if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    subscriptions = [];
+    categories = [];
+    expenses = [];
+    profile = {
+        name: 'Atler',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
+        theme: 'default'
+    };
+    localStorage.removeItem('atler_theme');
+    applyTheme('default');
     loading.classList.add('hidden');
-
-    await renderApp();
-    renderProfilePage();
-
-    loadAllData()
-        .then(async () => {
-            await renderApp();
-            renderProfilePage();
-        })
-        .catch(() => {});
-    return;
+    authScreen.classList.remove('hidden');
 }
 
 });
