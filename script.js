@@ -1249,6 +1249,11 @@ document.getElementById('cal-next').addEventListener('click', () => {
     renderCalendar();
 });
 
+document.getElementById('cal-back-btn').addEventListener('click', e => {
+    e.preventDefault();
+    switchPage('dashboard-page');
+});
+
 document.getElementById('calendar-link').addEventListener('click', e => {
     e.preventDefault();
     switchPage('calendar-page');
