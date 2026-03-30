@@ -385,16 +385,10 @@ function renderExpensesView() {
     const container = document.getElementById('expenses-list-container');
     container.innerHTML = '';
 
-    // Monthly total (current calendar month)
-    const now = new Date();
-    const monthTotal = expenses
-        .filter(e => {
-            const d = new Date(e.date);
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        })
-        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    // Total of ALL expenses ever recorded
+    const allExpensesTotal = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
 
-    document.getElementById('expenses-month-total-val').textContent = monthTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('expenses-month-total-val').textContent = allExpensesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     if (expenses.length === 0) {
         container.innerHTML = `<div class="expenses-empty">No expenses logged yet.<br>Tap (+) to add one.</div>`;
@@ -473,80 +467,138 @@ function renderApp() {
     portfolioList.innerHTML  = '';
     upcomingScroll.innerHTML = '';
 
-    if (subscriptions.length === 0) {
-        portfolioList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--on-surface-variant); font-size: 0.9rem; background: var(--surface-low); border-radius: var(--radius-md);">No active subscriptions. Tap (+) to add.</div>';
+    if (subscriptions.length === 0 && expenses.filter(e => e.type === 'manual').length === 0) {
+        portfolioList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--on-surface-variant); font-size: 0.9rem; background: var(--surface-low); border-radius: var(--radius-md);">No entries yet. Tap (+) to add.</div>';
     } else {
         document.getElementById('spend-trend').style.display = 'inline-flex';
     }
 
-    subscriptions.forEach(sub => {
-        totalMonthly += getMonthlyCost(sub);
-        const color = colorFromName(sub.name);
+    // Build mixed list: subscriptions + manual expenses, sorted by date descending
+    const subItems = subscriptions.map(sub => ({
+        _type: 'sub',
+        _sortDate: new Date(sub.startDate || sub.dateAdded),
+        data: sub
+    }));
+    const expItems = expenses
+        .filter(e => e.type === 'manual')
+        .map(exp => ({
+            _type: 'exp',
+            _sortDate: new Date(exp.date),
+            data: exp
+        }));
+    const mixedItems = [...subItems, ...expItems]
+        .sort((a, b) => b._sortDate - a._sortDate);
 
-        // Portfolio item
-        const item = document.createElement('div');
-        item.className = 'list-item';
-        item.style.cursor = 'pointer';
-        item.innerHTML = `
-            <div class="list-item-left">
-                <div class="list-icon-wrapper" style="background: ${color}20; color: ${color}; font-size: 24px;">
-                    ${sub.name.charAt(0).toUpperCase()}
+    mixedItems.forEach(entry => {
+        if (entry._type === 'sub') {
+            const sub = entry.data;
+            totalMonthly += getMonthlyCost(sub);
+            const color = colorFromName(sub.name);
+
+            const item = document.createElement('div');
+            item.className = 'list-item';
+            item.style.cursor = 'pointer';
+            item.innerHTML = `
+                <div class="list-item-left">
+                    <div class="list-icon-wrapper" style="background: ${color}20; color: ${color}; font-size: 24px;">
+                        ${sub.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div class="list-title">${sub.name}</div>
+                        <div class="list-subtitle">${formatCycle(sub.cycle)}</div>
+                    </div>
                 </div>
-                <div>
-                    <div class="list-title">${sub.name}</div>
-                    <div class="list-subtitle">${formatCycle(sub.cycle)}</div>
+                <div class="text-right" style="display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
+                    <div style="text-align: right;">
+                        <div class="list-price">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div class="list-date">${formatDate(sub.dateAdded)}</div>
+                    </div>
+                    <button class="icon-btn remove-btn" data-id="${sub.id}" style="color: var(--error); padding: 4px; border-radius: 50%; background: transparent; border: none; cursor: pointer;">
+                        <span class="material-symbols-outlined" style="font-size: 20px;">block</span>
+                    </button>
                 </div>
-            </div>
-            <div class="text-right" style="display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
-                <div style="text-align: right;">
-                    <div class="list-price">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                    <div class="list-date">${formatDate(sub.dateAdded)}</div>
+            `;
+            item.addEventListener('click', e => {
+                if (e.target.closest('.remove-btn')) {
+                    e.stopPropagation();
+                    subscriptions = subscriptions.filter(s => s.id !== sub.id);
+                    saveState();
+                    renderApp();
+                    return;
+                }
+                viewDetails(sub.id);
+            });
+            portfolioList.appendChild(item);
+
+            // Upcoming mini card (subscriptions only)
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const anchor  = sub.startDate || sub.dateAdded;
+            const renDate = getNextRenewalDate(anchor, sub.cycle);
+            const diffDays = Math.ceil((renDate - today) / (1000 * 60 * 60 * 24));
+
+            let renewalText = 'N/A';
+            if (diffDays > 0)        renewalText = `Renews in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+            else if (diffDays === 0)  renewalText = 'Renews today';
+            const textColor = diffDays <= 3 ? 'var(--error)' : 'var(--primary)';
+
+            const miniCard = document.createElement('div');
+            miniCard.className = 'card-mini';
+            miniCard.innerHTML = `
+                <div class="card-icon" style="background: ${color}20; color: ${color};">
+                    <span class="material-symbols-outlined">payments</span>
                 </div>
-                <button class="icon-btn remove-btn" data-id="${sub.id}" style="color: var(--error); padding: 4px; border-radius: 50%; background: transparent; border: none; cursor: pointer;">
-                    <span class="material-symbols-outlined" style="font-size: 20px;">block</span>
-                </button>
-            </div>
-        `;
-        item.addEventListener('click', e => {
-            if (e.target.closest('.remove-btn')) {
-                e.stopPropagation();
-                subscriptions = subscriptions.filter(s => s.id !== sub.id);
-                saveState();
-                renderApp();
-                return;
-            }
-            viewDetails(sub.id);
-        });
-        portfolioList.appendChild(item);
+                <h3>${sub.name}</h3>
+                <p style="font-size: 0.85rem; color: ${textColor}; font-weight: 600;">${renewalText}</p>
+            `;
+            miniCard.addEventListener('click', () => viewDetails(sub.id));
+            upcomingScroll.appendChild(miniCard);
 
-        // Upcoming mini card
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const anchor  = sub.startDate || sub.dateAdded;
-        const renDate = getNextRenewalDate(anchor, sub.cycle);
-        const diffDays = Math.ceil((renDate - today) / (1000 * 60 * 60 * 24));
-
-        let renewalText = 'N/A';
-        if (diffDays > 0)       renewalText = `Renews in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
-        else if (diffDays === 0) renewalText = 'Renews today';
-
-        const textColor = diffDays <= 3 ? 'var(--error)' : 'var(--primary)';
-
-        const miniCard = document.createElement('div');
-        miniCard.className = 'card-mini';
-        miniCard.innerHTML = `
-            <div class="card-icon" style="background: ${color}20; color: ${color};">
-                <span class="material-symbols-outlined">payments</span>
-            </div>
-            <h3>${sub.name}</h3>
-            <p style="font-size: 0.85rem; color: ${textColor}; font-weight: 600;">${renewalText}</p>
-        `;
-        miniCard.addEventListener('click', () => viewDetails(sub.id));
-        upcomingScroll.appendChild(miniCard);
+        } else {
+            // One-time expense row — receipt icon, no abort button
+            const exp = entry.data;
+            const item = document.createElement('div');
+            item.className = 'list-item';
+            item.style.cursor = 'default';
+            item.innerHTML = `
+                <div class="list-item-left">
+                    <div class="list-icon-wrapper" style="background: var(--surface-high); color: var(--on-surface-variant); font-size: 20px;">
+                        <span class="material-symbols-outlined" style="font-size: 20px;">receipt_long</span>
+                    </div>
+                    <div>
+                        <div class="list-title">${exp.name}</div>
+                        <div class="list-subtitle">${formatDate(exp.date)}</div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="list-price">₹${parseFloat(exp.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                </div>
+            `;
+            portfolioList.appendChild(item);
+        }
     });
 
-    document.getElementById('total-spend').textContent = totalMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('ytd-spend').textContent   = (totalMonthly * 12).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Dashboard hero: subscriptions + this month's one-time expenses
+    const now = new Date();
+    const thisMonthExpenses = expenses
+        .filter(e => {
+            const d = new Date(e.date);
+            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        })
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    document.getElementById('total-spend').textContent = (totalMonthly + thisMonthExpenses).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // Analytics subscriptions view: monthly subscriptions only
+    const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    document.getElementById('ytd-spend').textContent = totalMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // Split line
+    const splitEl = document.getElementById('ytd-split');
+    if (splitEl) {
+        const subYearly = (totalMonthly * 12).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const expTotal  = totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        splitEl.textContent = `Subscriptions ₹${subYearly} · One-time ₹${expTotal}`;
+    }
 
     renderAnalyticsView();
 }
