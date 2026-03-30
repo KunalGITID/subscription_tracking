@@ -1188,207 +1188,181 @@ document.getElementById('cal-next').addEventListener('click', () => { calMonth++
 document.getElementById('cal-back-btn').addEventListener('click', e => { e.preventDefault(); switchPage('dashboard-page'); });
 document.getElementById('calendar-link').addEventListener('click', e => { e.preventDefault(); switchPage('calendar-page'); });
 
+// ═══════════════════════════════════════════
+// BOOT LOADER & INITIALIZATION
+// ═══════════════════════════════════════════
 
-async function withTimeout(promise, ms = 8000) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('timeout')), ms);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function randomChars(len) {
+    const chars = "^%*&()_+-=[]{}|;:,.<>?/\\#@!$";
+    let out = "";
+    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+}
+
+/**
+ * Animated decoding effect: random noise -> target text with highlighter reveal
+ */
+async function decodeStatus(el, target, duration = 800) {
+    if (!el) return;
+    
+    // Clear any previous animation interval on this element
+    if (el._decodeInterval) clearInterval(el._decodeInterval);
+    
+    const start = Date.now();
+    
+    return new Promise(resolve => {
+        el._decodeInterval = setInterval(() => {
+            const elapsed = Date.now() - start;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Number of characters to "reveal" in order
+            const revealedCount = Math.floor(progress * target.length);
+            
+            let finalHTML = "";
+            for (let i = 0; i < target.length; i++) {
+                if (i < revealedCount) {
+                    // Revealed character with solid background
+                    finalHTML += `<span class="char-decoded">${target[i]}</span>`;
+                } else {
+                    // Noise character (dimmed)
+                    finalHTML += `<span class="char-noise">${randomChars(1)}</span>`;
+                }
+            }
+            
+            el.innerHTML = finalHTML;
+            
+            if (progress >= 1) {
+                clearInterval(el._decodeInterval);
+                el._decodeInterval = null;
+                el.textContent = target; // Fallback to plain text on final
+                resolve();
+            }
+        }, 50);
     });
+}
+
+function startBootNoise() {
+    const noiseEl = document.getElementById("boot-noise");
+    if (!noiseEl) return () => {};
+
+    const timer = setInterval(() => {
+        noiseEl.textContent = `${randomChars(42)}\n${randomChars(34)}\n${randomChars(28)}`;
+    }, 80);
+
+    return () => clearInterval(timer);
+}
+
+async function runBootWithLoader(bootFn, minVisible = 6800) {
+    const loading = document.getElementById('app-loading');
+    const statusEl = document.getElementById('boot-status');
+    const startTime = Date.now();
+    
+    loading.classList.remove('hidden');
+    const stopNoise = startBootNoise();
+
     try {
-        return await Promise.race([promise, timeout]);
+        await decodeStatus(statusEl, "INITIALIZING ATŁER...", 600);
+        
+        // Run the boot function with a 10s safety timeout to prevent getting "stuck"
+        const bootPromise = bootFn();
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 15000));
+        
+        // While waiting, show some more flavor messages if it's taking a bit
+        const flavorTimer = setTimeout(() => {
+            const msg = minVisible > 3000 ? "PREPARING PREMIUM DASHBOARD..." : "SYNCING SECURE SESSION...";
+            decodeStatus(statusEl, msg, 600);
+        }, 1200);
+
+        if (minVisible > 3000) {
+            setTimeout(() => {
+                 decodeStatus(statusEl, "UPLINKING ACCOUNTS...", 600);
+            }, 3200);
+            setTimeout(() => {
+                 decodeStatus(statusEl, "OPTIMIZING DASHBOARD...", 600);
+            }, 5500);
+            setTimeout(() => {
+                 decodeStatus(statusEl, "FINALIZING SYSTEM SYNC...", 600);
+            }, 8000);
+        }
+
+        await Promise.race([bootPromise, timeoutPromise]);
+        clearTimeout(flavorTimer);
+        
+        await decodeStatus(statusEl, "SYSTEM READY.", 400);
+
+        // Ensure loader is visible for the requested vibe duration
+        const elapsed = Date.now() - startTime;
+        if (elapsed < minVisible) await sleep(minVisible - elapsed);
+
     } finally {
-        clearTimeout(timer);
+        stopNoise();
+        loading.style.opacity = '0';
+        loading.style.transition = 'opacity 0.5s ease';
+        await sleep(500);
+        loading.classList.add('hidden');
+        loading.style.opacity = '';
     }
 }
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-const BOOT_MESSAGES = [
-  "Initializing ATŁER...",
-  "Checking secure session...",
-  "Syncing subscriptions...",
-  "Preparing dashboard..."
-];
 
-function randomNoiseLine(len = 42) {
-  const chars = "^%*&()_+-=[]{}|;:,.<>?/\\";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
-function startBootDecoder() {
-  const noiseEl = document.getElementById("boot-noise");
-  const statusEl = document.getElementById("boot-status");
-  let msgIndex = 0;
-
-  const noiseTimer = setInterval(() => {
-    if (!noiseEl) return;
-    noiseEl.textContent = `${randomNoiseLine()}\n${randomNoiseLine(34)}\n${randomNoiseLine(28)}`;
-  }, 90);
-
-  const statusTimer = setInterval(() => {
-    if (!statusEl) return;
-    statusEl.textContent = BOOT_MESSAGES[msgIndex % BOOT_MESSAGES.length];
-    msgIndex++;
-  }, 900);
-
-  return () => {
-    clearInterval(noiseTimer);
-    clearInterval(statusTimer);
-    if (noiseEl) noiseEl.textContent = "Decoded: INITIALIZING ATŁER";
-  };
-}
-async function runBootWithLoader(bootFn) {
-  const loading = document.getElementById('app-loading');
-  const text = document.getElementById('boot-status');
-  const start = Date.now();
-  let slowTimer;
-
-  loading.classList.remove('hidden');
-  if (text) text.textContent = 'Initializing ATŁER...';
-const BOOT_MESSAGES = [
-  "Initializing ATŁER...",
-  "Checking secure session...",
-  "Syncing subscriptions...",
-  "Preparing dashboard..."
-];
-
-function randomNoiseLine(len = 42) {
-  const chars = "^%*&()_+-=[]{}|;:,.<>?/\\";
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return out;
-}
-
-function startBootDecoder() {
-  const noiseEl = document.getElementById("boot-noise");
-  const statusEl = document.getElementById("boot-status");
-  let msgIndex = 0;
-
-  if (!noiseEl && !statusEl) return () => {};
-
-  const noiseTimer = setInterval(() => {
-    if (!noiseEl) return;
-    noiseEl.textContent =
-      randomNoiseLine() + "\n" +
-      randomNoiseLine(34) + "\n" +
-      randomNoiseLine(28);
-  }, 90);
-
-  const statusTimer = setInterval(() => {
-    if (!statusEl) return;
-    statusEl.textContent = BOOT_MESSAGES[msgIndex % BOOT_MESSAGES.length];
-    msgIndex++;
-  }, 900);
-
-  return () => {
-    clearInterval(noiseTimer);
-    clearInterval(statusTimer);
-    if (noiseEl) noiseEl.textContent = "Decoded: INITIALIZING ATŁER";
-  };
-}
-
-  const stopDecoder = startBootDecoder(); // <-- here
-
-  slowTimer = setTimeout(() => {
-    if (text) text.textContent = 'Syncing your data...';
-  }, 2500);
-
-  try {
-    await bootFn();
-  } finally {
-    clearTimeout(slowTimer);
-    stopDecoder(); // <-- here
-
-    const minVisible = 1200;
-    const elapsed = Date.now() - start;
-    if (elapsed < minVisible) await sleep(minVisible - elapsed);
-
-    loading.classList.add('hidden');
-  }
-}
-
-
-// APP INIT
+// Global App Initialization
 (async () => {
-  await runBootWithLoader(async () => {
-    const authScreen = document.getElementById('auth-screen');
+    await runBootWithLoader(async () => {
+        const authScreen = document.getElementById('auth-screen');
+        const { data: { session } } = await sb.auth.getSession();
 
-    const BOOT_TIMEOUT_MS = 1800;
+        if (!session?.user) {
+            authScreen.classList.remove('hidden');
+            return;
+        }
 
-    const safeBoot = (async () => {
-      const { data: { session } } = await sb.auth.getSession();
+        currentUser = session.user;
+        authScreen.classList.add('hidden');
 
-      if (!session?.user) {
-        authScreen.classList.remove('hidden');
-        return;
-      }
+        // Immediate shell render
+        renderApp();
+        renderProfilePage();
 
-      currentUser = session.user;
-      authScreen.classList.add('hidden');
-
-      await renderApp();
-      renderProfilePage();
-
-      loadAllData()
-        .then(async () => {
-          await renderApp();
-          renderProfilePage();
-        })
-        .catch(() => {});
-    })();
-
-    await Promise.race([
-      safeBoot,
-      new Promise(resolve => setTimeout(resolve, BOOT_TIMEOUT_MS))
-    ]);
-  });
+        // Background data load and re-render
+        // This is the "UI first, then data" approach for speed
+        loadAllData().then(() => {
+            renderApp();
+            renderProfilePage();
+        });
+    });
 })();
-
 
 // AUTH STATE CHANGES
 sb.auth.onAuthStateChange(async (event, session) => {
-    const loading = document.getElementById('app-loading');
     const authScreen = document.getElementById('auth-screen');
 
-   if (event === 'SIGNED_IN' && session?.user) {
-    if (currentUser?.id === session.user.id) return;
-    currentUser = session.user;
-    authScreen.classList.add('hidden');
-    loading.classList.add('hidden');
+    if (event === 'SIGNED_IN' && session?.user) {
+        if (currentUser?.id === session.user.id) return;
 
-    await renderApp();
-    renderProfilePage();
-
-    loadAllData()
-        .then(async () => {
+        // Custom 5-second premium boot after login
+        await runBootWithLoader(async () => {
+            currentUser = session.user;
+            authScreen.classList.add('hidden');
+            
+            await loadAllData();
             await renderApp();
             renderProfilePage();
-        })
-        .catch(() => {});
-    return;
-}
+        }, 10000);
+    }
 
-
-if (event === 'SIGNED_OUT') {
-    currentUser = null;
-    subscriptions = [];
-    categories = [];
-    expenses = [];
-    profile = {
-        name: 'Atler',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
-        theme: 'default'
-    };
-    localStorage.removeItem('atler_theme');
-    applyTheme('default');
-    loading.classList.add('hidden');
-    authScreen.classList.remove('hidden');
-}
-
+    if (event === 'SIGNED_OUT') {
+        currentUser = null;
+        subscriptions = [];
+        categories = [];
+        expenses = [];
+        profile = {
+            name: 'Atler',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
+            theme: 'default'
+        };
+        localStorage.removeItem('atler_theme');
+        applyTheme('default');
+        authScreen.classList.remove('hidden');
+    }
 });
-
-
