@@ -1119,7 +1119,7 @@ section {
   align-items: flex-end;
   justify-content: flex-start;
   z-index: 10000;
-  padding: 240px;
+  padding: 48px;
   overflow: hidden;
 }
 
@@ -1138,8 +1138,8 @@ section {
 
 .boot-noise {
   position: absolute;
-  left: 160px;
-  bottom: 480px;
+  left: 48px;
+  bottom: 140px;
   width: min(80vw, 500px);
   min-height: 48px;
   font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', monospace;
@@ -1159,24 +1159,24 @@ section {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 32px;
+  gap: 12px;
   text-align: left;
 }
 
 .boot-brand {
   font-family: var(--font-headline);
   font-weight: 950;
-  font-size: clamp(28rem, 100vw, 40rem);
+  font-size: clamp(2.5rem, 12vw, 4.5rem);
   color: var(--primary);
-  letter-spacing: -0.06em;
-  text-shadow: 0 0 120px var(--primary-glow);
-  line-height: 0.7;
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 30px var(--primary-glow);
+  line-height: 0.85;
 }
 
 .boot-status {
   font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', monospace;
-  font-size: clamp(9.6rem, 32vw, 14rem);
-  font-weight: 900;
+  font-size: clamp(0.9rem, 3vw, 1.25rem);
+  font-weight: 800;
   color: var(--primary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
