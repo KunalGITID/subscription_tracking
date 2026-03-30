@@ -1128,12 +1128,15 @@ function buildRenewalMap(year, month) {
 }
 
 function renderCalendar() {
+    const monthLabel = document.getElementById('cal-month-label');
+    const grid       = document.getElementById('cal-grid');
+    const detail     = document.getElementById('cal-detail');
+    if (!monthLabel || !grid || !detail) return;
+
     const monthNames = ['January','February','March','April','May','June',
                         'July','August','September','October','November','December'];
-    document.getElementById('cal-month-label').textContent = `${monthNames[calMonth]} ${calYear}`;
+    monthLabel.textContent = `${monthNames[calMonth]} ${calYear}`;
 
-    const grid   = document.getElementById('cal-grid');
-    const detail = document.getElementById('cal-detail');
     grid.innerHTML = '';
     detail.style.display = 'none';
     calSelectedDate = null;
@@ -1143,6 +1146,24 @@ function renderCalendar() {
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
     const prevDays    = new Date(calYear, calMonth, 0).getDate();
     const today       = new Date(); today.setHours(0,0,0,0);
+
+    // Build expense map: dateKey -> total amount
+    const expenseMap = {};
+    expenses.forEach(exp => {
+        const d = new Date(exp.date);
+        if (d.getMonth() === calMonth && d.getFullYear() === calYear) {
+            const key = exp.date.split('T')[0];
+            expenseMap[key] = (expenseMap[key] || 0) + parseFloat(exp.amount);
+        }
+    });
+
+    // Heatmap: rgba(105,106,219) scaled by spend — 0 transparent, ₹1000+ = opacity 0.75
+    function heatBg(spend) {
+        if (spend <= 0) return null;
+        const t       = Math.min(spend / 1000, 1);
+        const opacity = (0.08 + t * 0.67).toFixed(2);
+        return `rgba(105,106,219,${opacity})`;
+    }
 
     // Leading cells (prev month)
     for (let i = 0; i < firstDay; i++) {
@@ -1154,21 +1175,30 @@ function renderCalendar() {
 
     // Current month days
     for (let d = 1; d <= daysInMonth; d++) {
-        const dateObj = new Date(calYear, calMonth, d);
-        const key     = dateObj.toISOString().split('T')[0];
-        const subs    = renewalMap[key] || [];
-        const isToday = dateObj.getTime() === today.getTime();
+        const dateObj    = new Date(calYear, calMonth, d);
+        const key        = dateObj.toISOString().split('T')[0];
+        const subs       = renewalMap[key] || [];
+        const dayExpAmt  = expenseMap[key] || 0;
+        const subSpend   = subs.reduce((s, sub) => s + parseFloat(sub.price), 0);
+        const totalSpend = subSpend + dayExpAmt;
+        const isToday    = dateObj.getTime() === today.getTime();
+        const hasAny     = subs.length > 0 || dayExpAmt > 0;
 
         const cell = document.createElement('div');
         cell.className = 'cal-cell'
-            + (subs.length ? ' has-events' : '')
-            + (isToday     ? ' today'      : '');
+            + (hasAny  ? ' has-events' : '')
+            + (isToday ? ' today'      : '');
+
+        // Apply heatmap background
+        const heat = heatBg(totalSpend);
+        if (heat) cell.style.background = heat;
 
         const dateEl = document.createElement('div');
         dateEl.className = 'cal-date';
         dateEl.textContent = d;
         cell.appendChild(dateEl);
 
+        // Subscription dots
         if (subs.length) {
             const dotsEl = document.createElement('div');
             dotsEl.className = 'cal-dots';
@@ -1179,7 +1209,9 @@ function renderCalendar() {
                 dotsEl.appendChild(dot);
             });
             cell.appendChild(dotsEl);
+        }
 
+        if (hasAny) {
             cell.addEventListener('click', () => {
                 if (calSelectedDate === key) {
                     calSelectedDate = null;
@@ -1197,7 +1229,7 @@ function renderCalendar() {
         grid.appendChild(cell);
     }
 
-    // Trailing cells (next month)
+    // Trailing cells
     const trailing = (firstDay + daysInMonth) % 7;
     if (trailing > 0) {
         for (let i = 1; i <= 7 - trailing; i++) {
@@ -1210,11 +1242,15 @@ function renderCalendar() {
 }
 
 function renderCalendarDetail(dateKey, subs) {
-    const detail = document.getElementById('cal-detail');
-    const d = new Date(dateKey);
-    const label = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+    const detail  = document.getElementById('cal-detail');
+    const d       = new Date(dateKey);
+    const label   = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+    const fmt     = n => parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dayExps = expenses.filter(e => e.date.split('T')[0] === dateKey);
 
     let html = `<div class="cal-detail-date">${label}</div>`;
+
+    // Subscriptions
     subs.forEach(sub => {
         const color = colorFromName(sub.name);
         html += `
@@ -1225,12 +1261,45 @@ function renderCalendarDetail(dateKey, subs) {
                     </div>
                     <div>
                         <div class="cal-detail-name">${sub.name}</div>
-                        <div class="cal-detail-cycle">${formatCycle(sub.cycle)}</div>
+                        <div class="cal-detail-cycle">${formatCycle(sub.cycle)} renewal</div>
                     </div>
                 </div>
-                <div class="cal-detail-price">₹${parseFloat(sub.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div class="cal-detail-price">₹${fmt(sub.price)}</div>
             </div>`;
     });
+
+    // Expenses — with divider if both present
+    if (dayExps.length) {
+        if (subs.length) {
+            html += `<div style="border-top:1px solid var(--surface);margin:8px 0 6px;"></div>
+                     <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--on-surface-variant);margin-bottom:6px;">One-time expenses</div>`;
+        }
+        dayExps.forEach(exp => {
+            html += `
+                <div class="cal-detail-item">
+                    <div class="cal-detail-left">
+                        <div class="cal-detail-icon" style="background:var(--surface-high);color:var(--on-surface-variant);">
+                            <span class="material-symbols-outlined" style="font-size:16px;">receipt_long</span>
+                        </div>
+                        <div>
+                            <div class="cal-detail-name">${exp.name}</div>
+                            <div class="cal-detail-cycle">One-time expense</div>
+                        </div>
+                    </div>
+                    <div class="cal-detail-price">₹${fmt(exp.amount)}</div>
+                </div>`;
+        });
+    }
+
+    // Combined total if both types present
+    if (subs.length && dayExps.length) {
+        const subTotal = subs.reduce((s, sub) => s + parseFloat(sub.price), 0);
+        const expTotal = dayExps.reduce((s, e)  => s + parseFloat(e.amount),  0);
+        html += `<div style="border-top:1px solid var(--surface);margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="font-size:0.75rem;color:var(--on-surface-variant);font-weight:600;">Total today</div>
+                    <div style="font-size:1rem;font-weight:800;color:var(--primary);">₹${fmt(subTotal + expTotal)}</div>
+                 </div>`;
+    }
 
     detail.innerHTML = html;
     detail.style.display = 'block';
@@ -1257,7 +1326,6 @@ document.getElementById('cal-back-btn').addEventListener('click', e => {
 document.getElementById('calendar-link').addEventListener('click', e => {
     e.preventDefault();
     switchPage('calendar-page');
-    renderCalendar();
 });
 
 // Re-render calendar when switching to it via nav tab
