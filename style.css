@@ -37,6 +37,7 @@
   --spacing-12: 3rem;
 }
 
+/* ── Reset ── */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -45,9 +46,16 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── App shell: full-height viewport, topbar fixed, content scrolls below it ── */
-html {
-  height: 100%;
+/* ── App shell ──
+   html/body fill the viewport naturally.
+   The topbar is fixed at top.
+   .container gets padding-top = topbar height so no content hides under it.
+   padding-bottom clears the fixed bottom nav.
+   No overflow set on body or html — viewport handles scrolling natively.
+── */
+html, body {
+  width: 100%;
+  min-height: 100vh;
 }
 
 body {
@@ -55,10 +63,36 @@ body {
   color: var(--on-surface);
   font-family: var(--font-body);
   line-height: 1.5;
-  min-height: 100%;
-  padding-bottom: 120px;
 }
 
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding-top: 72px;     /* clears the 64px fixed topbar + 8px gap */
+  padding-left: var(--spacing-6);
+  padding-right: var(--spacing-6);
+  padding-bottom: 140px; /* clears the fixed bottom nav */
+}
+
+/* Fixed topbar — always pinned to top of viewport */
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 var(--spacing-6);
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 100;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* ── Typography ── */
 h1, h2, h3, h4 {
   font-family: var(--font-headline);
   font-weight: 800;
@@ -81,14 +115,7 @@ h1, h2, h3, h4 {
   color: var(--on-surface-variant);
 }
 
-/* Container sits below the fixed topbar via padding-top */
-.container {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 72px var(--spacing-6) 0;
-  position: relative;
-}
-
+/* ── Layout utilities ── */
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
 .items-center { align-items: center; }
@@ -97,22 +124,6 @@ h1, h2, h3, h4 {
 .justify-center { justify-content: center; }
 .gap-2 { gap: var(--spacing-2); }
 .gap-4 { gap: var(--spacing-4); }
-
-/* Fixed topbar — always visible at the top */
-.topbar {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  height: 64px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 var(--spacing-6);
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  z-index: 100;
-  border-bottom: 1px solid var(--glass-border);
-}
 
 .brand {
   font-family: var(--font-headline);
@@ -166,7 +177,7 @@ section {
 
 .hero-value {
   position: relative;
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .currency {
