@@ -40,16 +40,25 @@ const themes = {
 function applyTheme(name) {
     const t = themes[name] || themes.default;
     const r = document.documentElement.style;
-    r.setProperty('--primary',           t.primary);
+
+    r.setProperty('--primary', t.primary);
     r.setProperty('--primary-container', t.primaryContainer);
-    r.setProperty('--primary-glow',      t.primaryGlow);
-    r.setProperty('--secondary',         t.secondary);
-    r.setProperty('--secondary-glow',    t.secondaryGlow);
+    r.setProperty('--primary-glow', t.primaryGlow);
+    r.setProperty('--secondary', t.secondary);
+    r.setProperty('--secondary-glow', t.secondaryGlow);
+
     document.querySelectorAll('.theme-chip').forEach(chip => {
         const dot = chip.querySelector('div');
-        if (dot) dot.style.border = chip.dataset.theme === name ? '2px solid ' + t.primary : '2px solid transparent';
+        if (dot) {
+            dot.style.border =
+                chip.dataset.theme === name
+                    ? `2px solid ${t.primary}`
+                    : '2px solid transparent';
+        }
     });
+
     profile.theme = name;
+    localStorage.setItem('atler_theme', name); // persist for instant theme on next launch
 }
 
 // ═══════════════════════════════════════════
