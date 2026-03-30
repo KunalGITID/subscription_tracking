@@ -1247,6 +1247,49 @@ async function runBootWithLoader(bootFn) {
 
   loading.classList.remove('hidden');
   if (text) text.textContent = 'Initializing ATŁER...';
+const BOOT_MESSAGES = [
+  "Initializing ATŁER...",
+  "Checking secure session...",
+  "Syncing subscriptions...",
+  "Preparing dashboard..."
+];
+
+function randomNoiseLine(len = 42) {
+  const chars = "^%*&()_+-=[]{}|;:,.<>?/\\";
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+function startBootDecoder() {
+  const noiseEl = document.getElementById("boot-noise");
+  const statusEl = document.getElementById("boot-status");
+  let msgIndex = 0;
+
+  if (!noiseEl && !statusEl) return () => {};
+
+  const noiseTimer = setInterval(() => {
+    if (!noiseEl) return;
+    noiseEl.textContent =
+      randomNoiseLine() + "\n" +
+      randomNoiseLine(34) + "\n" +
+      randomNoiseLine(28);
+  }, 90);
+
+  const statusTimer = setInterval(() => {
+    if (!statusEl) return;
+    statusEl.textContent = BOOT_MESSAGES[msgIndex % BOOT_MESSAGES.length];
+    msgIndex++;
+  }, 900);
+
+  return () => {
+    clearInterval(noiseTimer);
+    clearInterval(statusTimer);
+    if (noiseEl) noiseEl.textContent = "Decoded: INITIALIZING ATŁER";
+  };
+}
 
   const stopDecoder = startBootDecoder(); // <-- here
 
