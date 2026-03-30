@@ -261,9 +261,7 @@ section {
 .card-mini p  {
   font-size: 0.75rem;
   color: var(--on-surface-variant);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* List Items */
