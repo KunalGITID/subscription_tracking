@@ -1,11 +1,14 @@
-const CACHE_NAME = 'atler-v12';
+const CACHE_NAME = 'atler-v14';
 
 const APP_SHELL = [
   './',
   './index.html',
-  './style.css?v=11',
-  './script.js?v=11',
+  './style.css?v=12',
+  './script.js?v=14',
   './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
 ];
 
 self.addEventListener('install', event => {
