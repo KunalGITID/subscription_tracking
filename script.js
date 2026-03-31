@@ -490,14 +490,51 @@ async function ensureUserProfile(user = currentUser) {
     const safeName = String(rawName).trim() || 'Atler';
 
     try {
-        await sb.from('profiles').upsert({
-            user_id: user.id,
-            name: safeName,
-            avatar: profile.avatar,
-            theme: fallbackTheme,
-            currency: profile.currency || 'INR',
-            last_notified: profile.lastNotified || null,
-        });
+        const { data: existingProfile } = await sb
+            .from('profiles')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (!existingProfile) {
+            await sb.from('profiles').upsert({
+                user_id: user.id,
+                name: safeName,
+                avatar: profile.avatar,
+                theme: fallbackTheme,
+                currency: profile.currency || 'INR',
+                last_notified: profile.lastNotified || null,
+            });
+            return;
+        }
+
+        const patch = { user_id: user.id };
+        let shouldPatch = false;
+
+        if (!existingProfile.name) {
+            patch.name = safeName;
+            shouldPatch = true;
+        }
+        if (!existingProfile.avatar && profile.avatar) {
+            patch.avatar = profile.avatar;
+            shouldPatch = true;
+        }
+        if (!existingProfile.theme) {
+            patch.theme = fallbackTheme;
+            shouldPatch = true;
+        }
+        if (!existingProfile.currency) {
+            patch.currency = profile.currency || 'INR';
+            shouldPatch = true;
+        }
+        if (!existingProfile.last_notified && profile.lastNotified) {
+            patch.last_notified = profile.lastNotified;
+            shouldPatch = true;
+        }
+
+        if (shouldPatch) {
+            await sb.from('profiles').upsert(patch);
+        }
     } catch {
         // Non-blocking safeguard for OAuth and first-login users.
     }
