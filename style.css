@@ -17,6 +17,11 @@
   --error: #ffb4ab;
   --error-bg: rgba(255, 180, 171, 0.1);
 
+  --insights-text: rgba(255, 255, 255, 0.8);
+  --insights-divider: rgba(255, 255, 255, 0.1);
+  --nav-bg: rgba(19, 19, 19, 0.85);
+  --nav-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+
   --font-headline: 'Manrope', -apple-system, sans-serif;
   --font-body: 'Inter', -apple-system, sans-serif;
 
@@ -136,6 +141,7 @@ h1, h2, h3, h4 {
   background-color: var(--surface-high);
   overflow: hidden;
   border: 1px solid var(--glass-border);
+  cursor: pointer;
 }
 
 .avatar img {
@@ -369,7 +375,7 @@ section {
 
 /* Fixed: reduced bottom margin so multiple insights don't push card too tall */
 .insights-card p {
-  color: rgba(255,255,255,0.8);
+  color: var(--insights-text);
   font-size: 0.875rem;
   margin-top: var(--spacing-2);
   margin-bottom: var(--spacing-3);
@@ -380,7 +386,7 @@ section {
 /* Divider between stacked insights inside the card */
 .insight-divider {
   height: 1px;
-  background: rgba(255,255,255,0.15);
+  background: var(--insights-divider);
   margin: var(--spacing-3) 0;
   position: relative;
   z-index: 2;
@@ -427,13 +433,13 @@ section {
   display: flex;
   justify-content: space-around;
   padding: var(--spacing-3) var(--spacing-4) calc(var(--spacing-4) + 20px) var(--spacing-4);
-  background: rgba(19, 19, 19, 0.85);
+  background: var(--nav-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top-left-radius: 2rem;
   border-top-right-radius: 2rem;
   z-index: 100;
-  box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+  box-shadow: var(--nav-shadow);
 }
 
 .nav-item {
@@ -1191,4 +1197,30 @@ section {
   color: var(--bg-color);
   padding: 0 6px;
   border-radius: 2px;
+}
+
+#toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  background: var(--surface-high);
+  color: var(--on-surface);
+  padding: 8px 20px;
+  border-radius: var(--radius-full);
+  font-size: 0.82rem;
+  font-family: var(--font-headline);
+  font-weight: 700;
+  z-index: 500;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  border: 1px solid var(--glass-border);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
