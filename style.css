@@ -812,206 +812,6 @@ section {
   line-height: 1.8;
 }
 
-/* ─── Calendar Page ─── */
-#calendar-page {
-  padding: 0;
-}
-
-.cal-card {
-  background: var(--surface-low);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-}
-
-.cal-modal-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 16px 12px;
-}
-
-.cal-month-title {
-  font-family: var(--font-headline);
-  font-size: 1.2rem;
-  font-weight: 800;
-  color: var(--on-surface);
-  margin: 0;
-  text-align: center;
-  flex: 1;
-}
-
-.cal-nav-btn {
-  background: var(--surface);
-  border: none;
-  color: var(--on-surface-variant);
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s, color 0.2s;
-  flex-shrink: 0;
-}
-
-.cal-nav-btn:hover {
-  background: var(--surface-high);
-  color: var(--primary);
-}
-
-.cal-weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  padding: 0 12px 6px;
-  border-bottom: 1px solid var(--surface);
-}
-
-.cal-weekdays span {
-  text-align: center;
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--on-surface-variant);
-  padding: 4px 0;
-}
-
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
-  padding: 8px 12px 12px;
-}
-
-.cal-cell {
-  min-height: 56px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 6px 2px 4px;
-  cursor: default;
-  transition: background 0.15s;
-  position: relative;
-}
-
-.cal-cell.has-events { cursor: pointer; }
-.cal-cell.has-events:hover { background: var(--surface); }
-
-.cal-cell.today .cal-date {
-  background: var(--primary);
-  color: #000;
-  border-radius: var(--radius-full);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-}
-
-.cal-cell.selected { background: var(--surface); }
-
-.cal-cell.other-month .cal-date { color: var(--surface-high); }
-
-.cal-date {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--on-surface);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.cal-dots {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 3px;
-  max-width: 36px;
-}
-
-.cal-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.cal-detail {
-  margin-top: 12px;
-  background: var(--surface-low);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  animation: fadeIn 0.2s ease;
-}
-
-.cal-detail-date {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--on-surface-variant);
-  margin-bottom: 12px;
-}
-
-.cal-detail-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--surface);
-}
-
-.cal-detail-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.cal-detail-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cal-detail-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-  font-weight: 800;
-  font-family: var(--font-headline);
-  flex-shrink: 0;
-}
-
-.cal-detail-name {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--on-surface);
-}
-
-.cal-detail-cycle {
-  font-size: 0.75rem;
-  color: var(--on-surface-variant);
-  margin-top: 1px;
-}
-
-.cal-detail-price {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--on-surface);
-}
-
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed;
@@ -1264,6 +1064,78 @@ section {
 .analytics-search-input::placeholder { color: var(--on-surface-variant); }
 
 /* ── Profile collapsible section headers ── */
+.secondary-page-header {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.back-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.expense-detail-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 20px;
+  font-size: 28px;
+  color: var(--primary);
+}
+
+.expense-detail-card {
+  background: var(--surface-low);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 18px 16px;
+}
+
+.expense-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.expense-detail-row + .expense-detail-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.exp-row-button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--surface-low);
+  cursor: pointer;
+}
+
+.exp-row-button:last-child {
+  border-bottom: none;
+}
+
+#profile-page > section {
+  margin-top: 18px;
+  margin-bottom: 0;
+}
+
+.profile-collapse-section {
+  margin-top: 12px !important;
+}
+
 .profile-collapse-header {
   width: 100%;
   display: flex;
@@ -1272,10 +1144,27 @@ section {
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--glass-border);
-  padding: 4px 0 12px;
+  padding: 4px 0 10px;
   cursor: pointer;
   color: inherit;
   font-family: var(--font-body);
+}
+
+.profile-collapse-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s ease, padding-top 0.26s ease;
+  padding-top: 0;
+}
+
+.profile-collapse-body > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.profile-collapse-body.is-open {
+  grid-template-rows: 1fr;
+  padding-top: 14px;
 }
 
 .profile-collapse-chevron {
@@ -1283,4 +1172,8 @@ section {
   color: var(--on-surface-variant);
   transition: transform 0.2s ease;
   flex-shrink: 0;
+}
+
+.profile-collapse-header[aria-expanded="true"] .profile-collapse-chevron {
+  transform: rotate(90deg);
 }
