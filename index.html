@@ -302,6 +302,15 @@
                 </div>
             </section>
             <section>
+                <div class="label" style="margin-bottom:16px;">Currency</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="currency-pill" data-currency="INR" style="background:var(--surface-low);border:2px solid var(--primary);color:var(--primary);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">₹ INR</button>
+                    <button class="currency-pill" data-currency="USD" style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">$ USD</button>
+                    <button class="currency-pill" data-currency="EUR" style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">€ EUR</button>
+                    <button class="currency-pill" data-currency="GBP" style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">£ GBP</button>
+                </div>
+            </section>
+            <section>
                 <div class="label" style="margin-bottom:16px;">Theme</div>
                 <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
                     <div class="theme-chip" data-theme="default" style="text-align:center;cursor:pointer;">
@@ -314,33 +323,54 @@
                             style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#0d47a1,#4fc3f7);margin:0 auto 6px;border:2px solid transparent;">
                         </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Midnight</span>
                     </div>
-                    <div class="theme-chip" data-theme="rose" style="text-align:center;cursor:pointer;">
-                        <div
-                            style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#880e4f,#f48fb1);margin:0 auto 6px;border:2px solid transparent;">
-                        </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Rose</span>
-                    </div>
                     <div class="theme-chip" data-theme="forest" style="text-align:center;cursor:pointer;">
                         <div
                             style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#1b5e20,#81c784);margin:0 auto 6px;border:2px solid transparent;">
                         </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Forest</span>
                     </div>
-                    <div class="theme-chip" data-theme="amber" style="text-align:center;cursor:pointer;">
+                    <div class="theme-chip" data-theme="paper" style="text-align:center;cursor:pointer;">
                         <div
-                            style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#e65100,#ffcc02);margin:0 auto 6px;border:2px solid transparent;">
-                        </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Amber</span>
+                            style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#E0E0E0,#F5F5F5);margin:0 auto 6px;border:2px solid transparent;">
+                        </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Paper</span>
+                    </div>
+                    <div class="theme-chip" data-theme="void" style="text-align:center;cursor:pointer;">
+                        <div
+                            style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#0D0D0D,#E05A4E);margin:0 auto 6px;border:2px solid transparent;">
+                        </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Void</span>
+                    </div>
+                    <div class="theme-chip" data-theme="inferno" style="text-align:center;cursor:pointer;">
+                        <div
+                            style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#FF6A00,#00FFB2);margin:0 auto 6px;border:2px solid transparent;">
+                        </div><span style="font-size:0.7rem;color:var(--on-surface-variant);">Inferno</span>
+                    </div>
+                </div>
+            </section>
+            <section>
+                <div class="label" style="margin-bottom:16px;">Notifications</div>
+                <div style="background:var(--surface-low);border:1px solid var(--glass-border);border-radius:var(--radius-md);overflow:hidden;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;">
+                        <div style="display:flex;align-items:center;gap:14px;">
+                            <div id="notif-icon-wrap" style="width:40px;height:40px;border-radius:var(--radius-md);background:var(--primary-container);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <span class="material-symbols-outlined" style="font-size:20px;color:var(--primary);">notifications</span>
+                            </div>
+                            <div>
+                                <div style="font-size:0.95rem;color:var(--on-surface);font-weight:600;">Renewal Reminders</div>
+                                <div id="notif-status" style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:3px;">Not enabled</div>
+                            </div>
+                        </div>
+                        <button id="notif-toggle-btn" style="background:var(--primary-container);color:var(--primary);border:none;padding:10px 18px;border-radius:var(--radius-md);font-weight:700;font-size:0.82rem;cursor:pointer;white-space:nowrap;font-family:var(--font-body);">Enable</button>
+                    </div>
+                    <div style="padding:0 16px 14px;font-size:0.78rem;color:var(--on-surface-variant);line-height:1.5;border-top:1px solid var(--glass-border);padding-top:12px;">
+                        Get reminded <strong style="color:var(--on-surface);">3 days</strong> and <strong style="color:var(--on-surface);">1 day</strong> before any subscription renews so you're never caught off guard.
                     </div>
                 </div>
             </section>
             <section>
                 <div class="label" style="margin-bottom:16px;">Data Management</div>
                 <div style="display:flex;flex-direction:column;gap:12px;">
-                    <button id="export-data-btn"
+                    <button id="open-data-modal-btn"
                         style="display:flex;align-items:center;gap:10px;background:var(--surface-low);border:1px solid var(--glass-border);color:var(--on-surface);padding:14px 16px;border-radius:var(--radius-md);font-size:0.95rem;font-family:var(--font-body);cursor:pointer;text-align:left;width:100%;"><span
-                            class="material-symbols-outlined" style="color:var(--secondary);">download</span>Export all
-                        data as JSON</button>
-                    <button id="clear-data-btn"
-                        style="display:flex;align-items:center;gap:10px;background:var(--error-bg);border:1px solid var(--error);color:var(--error);padding:14px 16px;border-radius:var(--radius-md);font-size:0.95rem;font-family:var(--font-body);cursor:pointer;text-align:left;width:100%;"><span
-                            class="material-symbols-outlined">delete_forever</span>Clear all data</button>
+                            class="material-symbols-outlined" style="color:var(--secondary);">import_export</span>Import / Export</button>
                     <button id="signout-btn"
                         style="display:flex;align-items:center;gap:10px;background:transparent;border:1px solid var(--surface-high);color:var(--on-surface-variant);padding:14px 16px;border-radius:var(--radius-md);font-size:0.95rem;font-family:var(--font-body);cursor:pointer;text-align:left;width:100%;"><span
                             class="material-symbols-outlined">logout</span>Sign out</button>
@@ -423,6 +453,46 @@
             </div>
         </div>
     </div>
+
+    <!-- Data Management Modal -->
+    <div id="data-modal-overlay" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.65);align-items:center;justify-content:center;">
+        <div id="data-modal" style="background:var(--surface-low);border-radius:var(--radius-lg);padding:24px;width:calc(100% - 48px);max-width:320px;display:flex;flex-direction:column;gap:10px;">
+            <div style="font-size:1rem;font-weight:800;font-family:var(--font-display);color:var(--on-surface);margin-bottom:6px;">Data Management</div>
+            <button id="dm-export-btn" style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--glass-border);color:var(--on-surface);padding:14px 16px;border-radius:var(--radius-md);font-size:0.92rem;font-family:var(--font-body);cursor:pointer;width:100%;text-align:left;">
+                <span class="material-symbols-outlined" style="font-size:20px;color:var(--secondary);">download</span>Export as JSON
+            </button>
+            <button id="dm-import-btn" style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--glass-border);color:var(--on-surface);padding:14px 16px;border-radius:var(--radius-md);font-size:0.92rem;font-family:var(--font-body);cursor:pointer;width:100%;text-align:left;">
+                <span class="material-symbols-outlined" style="font-size:20px;color:var(--primary);">upload</span>Import from JSON
+            </button>
+            <input type="file" id="import-file-input" accept=".json" style="display:none;">
+            <button id="dm-clear-btn" style="display:flex;align-items:center;gap:12px;background:var(--error-bg);border:1px solid var(--error);color:var(--error);padding:14px 16px;border-radius:var(--radius-md);font-size:0.92rem;font-family:var(--font-body);cursor:pointer;width:100%;text-align:left;">
+                <span class="material-symbols-outlined" style="font-size:20px;">delete_forever</span>Clear All Data
+            </button>
+            <button id="dm-cancel-btn" style="display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--surface-high);color:var(--on-surface-variant);padding:12px 16px;border-radius:var(--radius-md);font-size:0.92rem;font-family:var(--font-body);cursor:pointer;width:100%;">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification permission prompt -->
+    <div id="notif-prompt-overlay" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.65);align-items:flex-end;justify-content:center;">
+        <div style="background:var(--surface);border-radius:28px 28px 0 0;padding:32px 24px 48px;width:100%;max-width:480px;margin:0 auto;animation:slideUp 0.3s ease;">
+            <div style="width:40px;height:4px;background:var(--surface-high);border-radius:2px;margin:0 auto 28px;"></div>
+            <div style="text-align:center;margin-bottom:28px;">
+                <div style="width:72px;height:72px;border-radius:50%;background:var(--primary-container);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+                    <span class="material-symbols-outlined" style="font-size:36px;color:var(--primary);">notifications_active</span>
+                </div>
+                <h3 style="font-family:var(--font-display);font-size:1.3rem;font-weight:800;margin:0 0 10px;">Never miss a renewal</h3>
+                <p style="color:var(--on-surface-variant);font-size:0.9rem;line-height:1.6;margin:0;">Atler can remind you <strong style="color:var(--on-surface);">3 days</strong> and <strong style="color:var(--on-surface);">1 day</strong> before any subscription renews — so you're always in control.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <button id="notif-prompt-allow" style="background:var(--primary);color:#0e0e0e;border:none;padding:16px;border-radius:var(--radius-md);font-weight:800;font-size:1rem;cursor:pointer;font-family:var(--font-display);width:100%;">Allow Notifications</button>
+                <button id="notif-prompt-skip" style="background:transparent;color:var(--on-surface-variant);border:none;padding:14px;border-radius:var(--radius-md);font-size:0.9rem;cursor:pointer;font-family:var(--font-body);width:100%;">Maybe Later</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="./script.js?v=11"></script>
