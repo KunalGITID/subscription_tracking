@@ -3,20 +3,28 @@
 // ═══════════════════════════════════════════
 const SUPABASE_URL  = 'https://cnxurdingdhhdcjgujkz.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNueHVyZGluZ2RoaGRjamd1amt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NzQ1OTIsImV4cCI6MjA5MDQ1MDU5Mn0.nX0-MR9C1fmKRA9lHw0FBp_r0LYYlntbz9B7BW7HKd8';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
-    auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storage: localStorage
-    }
-});
+const sb = window.supabase?.createClient
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            storage: localStorage
+        }
+    })
+    : null;
 
 // ═══════════════════════════════════════════
 // GLOBAL STATE
 // ═══════════════════════════════════════════
 let currentUser   = null;
-let profile       = { name: 'Atler', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150', theme: 'default', lastNotified: null, currency: 'INR' };
+let profile       = {
+    name: 'Atler',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
+    theme: localStorage.getItem('atler_theme') || 'default',
+    lastNotified: null,
+    currency: 'INR'
+};
 let subscriptions = [];
 let categories    = [];
 let expenses      = [];
@@ -1617,30 +1625,46 @@ function startBootNoise() {
     return () => clearInterval(timer);
 }
 
-async function runBootWithLoader(bootFn, minVisible = 800) {
+async function runBootWithLoader(bootFn, minVisible = 250) {
     const loading = document.getElementById('app-loading');
     const statusEl = document.getElementById('boot-status');
+    if (!loading) return bootFn();
     const startTime = Date.now();
     
     loading.classList.remove('hidden');
     const stopNoise = startBootNoise();
+    let forcedHideTimer = null;
 
     try {
-        await decodeStatus(statusEl, "INITIALIZING ATŁER...", 300);
+        forcedHideTimer = setTimeout(() => {
+            loading.classList.add('hidden');
+        }, 12000);
+
+        if (statusEl) statusEl.textContent = "INITIALIZING ATŁER...";
         
         // Run the boot function with a 10s safety timeout to prevent getting "stuck"
         const bootPromise = bootFn();
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 10000));
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 2500));
         
-        await Promise.race([bootPromise, timeoutPromise]);
-        
-        await decodeStatus(statusEl, "SYSTEM READY.", 200);
+        const bootResult = await Promise.race([bootPromise, timeoutPromise]);
+
+        if (bootResult === 'timeout') {
+            const authScreen = document.getElementById('auth-screen');
+            if (authScreen && !currentUser) authScreen.classList.remove('hidden');
+            if (statusEl) statusEl.textContent = "STARTUP TIMEOUT.";
+            return;
+        }
 
         // Ensure loader is visible for the requested vibe duration
         const elapsed = Date.now() - startTime;
         if (elapsed < minVisible) await sleep(minVisible - elapsed);
 
+    } catch (error) {
+        console.error('Boot failed:', error);
+        const authScreen = document.getElementById('auth-screen');
+        if (authScreen && !currentUser) authScreen.classList.remove('hidden');
     } finally {
+        clearTimeout(forcedHideTimer);
         stopNoise();
         loading.style.opacity = '0';
         loading.style.transition = 'opacity 0.3s ease';
@@ -1654,6 +1678,14 @@ async function runBootWithLoader(bootFn, minVisible = 800) {
 (async () => {
     await runBootWithLoader(async () => {
         const authScreen = document.getElementById('auth-screen');
+        const authError = document.getElementById('auth-error');
+
+        if (!sb) {
+            if (authScreen) authScreen.classList.remove('hidden');
+            if (authError) authError.textContent = 'Unable to load app services. Refresh and try again.';
+            return;
+        }
+
         const { data: { session } } = await sb.auth.getSession();
 
         if (!session?.user) {
@@ -1679,7 +1711,7 @@ async function runBootWithLoader(bootFn, minVisible = 800) {
 })();
 
 // AUTH STATE CHANGES
-sb.auth.onAuthStateChange(async (event, session) => {
+if (sb) sb.auth.onAuthStateChange(async (event, session) => {
     const authScreen = document.getElementById('auth-screen');
 
     if (event === 'SIGNED_IN' && session?.user) {
