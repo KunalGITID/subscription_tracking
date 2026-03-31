@@ -778,7 +778,9 @@ section {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: 10px 12px;
+  background: var(--surface-low);
+  border-radius: var(--radius-md);
 }
 
 .exp-name {
@@ -1223,4 +1225,26 @@ section {
 @keyframes slideUp {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Profile collapsible section headers ── */
+.profile-collapse-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--glass-border);
+  padding: 4px 0 12px;
+  cursor: pointer;
+  color: inherit;
+  font-family: var(--font-body);
+}
+
+.profile-collapse-chevron {
+  font-size: 20px;
+  color: var(--on-surface-variant);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
