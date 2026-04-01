@@ -434,7 +434,7 @@ async function loadAllData() {
             avatar:       profRes.data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
             theme:        profRes.data.theme  || 'default',
             lastNotified: profRes.data.last_notified || null,
-            currency:     profRes.data.currency || 'INR',
+            currency:     'INR',
         };
     }
 
@@ -477,7 +477,7 @@ async function saveProfile() {
             avatar:        profile.avatar,
             theme:         profile.theme,
             last_notified: profile.lastNotified || null,
-            currency:      profile.currency || 'INR',
+            currency:      'INR',
         }));
 }
 
@@ -507,7 +507,7 @@ async function ensureUserProfile(user = currentUser) {
                 name: safeName,
                 avatar: profile.avatar,
                 theme: fallbackTheme,
-                currency: profile.currency || 'INR',
+                currency: 'INR',
                 last_notified: profile.lastNotified || null,
             });
             return;
@@ -528,8 +528,8 @@ async function ensureUserProfile(user = currentUser) {
             patch.theme = fallbackTheme;
             shouldPatch = true;
         }
-        if (!existingProfile.currency) {
-            patch.currency = profile.currency || 'INR';
+        if (!existingProfile.currency || existingProfile.currency !== 'INR') {
+            patch.currency = 'INR';
             shouldPatch = true;
         }
         if (!existingProfile.last_notified && profile.lastNotified) {
@@ -794,8 +794,7 @@ function parseCsvRecords(text) {
 // CURRENCY HELPERS
 // ═══════════════════════════════════════════
 function getCurrencySymbol() {
-    const symbols = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
-    return symbols[profile.currency] || '₹';
+    return '₹';
 }
 function animateCounter(elementId, targetValue, duration = 400) {
     const el = document.getElementById(elementId);
@@ -837,9 +836,7 @@ function getSubAge(dateAdded) {
 }
 
 function formatAmount(amount) {
-    const locales = { INR: 'en-IN', USD: 'en-US', EUR: 'de-DE', GBP: 'en-GB' };
-    const locale  = locales[profile.currency] || 'en-IN';
-    return parseFloat(amount).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function normalizeDateOnly(dateLike) {
@@ -1946,14 +1943,6 @@ function renderProfilePage() {
     applyTheme(profile.theme || 'default');
     renderNotificationStatus();
     renderNotificationOverview();
-    document.querySelectorAll('.currency-pill').forEach(pill => {
-        pill.style.border = pill.dataset.currency === (profile.currency || 'INR')
-            ? '2px solid var(--primary)'
-            : '2px solid var(--glass-border)';
-        pill.style.color = pill.dataset.currency === (profile.currency || 'INR')
-            ? 'var(--primary)'
-            : 'var(--on-surface-variant)';
-    });
 }
 
 document.getElementById('notif-toggle-btn').addEventListener('click', async () => {
@@ -2030,15 +2019,6 @@ document.getElementById('change-password-form').addEventListener('submit', async
     setTimeout(() => {
         feedback.style.color = '';
     }, 2500);
-});
-
-document.querySelectorAll('.currency-pill').forEach(pill => {
-    pill.addEventListener('click', async () => {
-        profile.currency = pill.dataset.currency;
-        await saveProfile();
-        renderProfilePage();
-        renderApp();
-    });
 });
 
 // ═══════════════════════════════════════════
@@ -2212,7 +2192,7 @@ document.getElementById('import-file-input').addEventListener('change', function
                 profile.name = parsed.profile.name || profile.name;
                 profile.avatar = parsed.profile.avatar || profile.avatar;
                 profile.theme = parsed.profile.theme || profile.theme;
-                profile.currency = parsed.profile.currency || profile.currency;
+                profile.currency = 'INR';
             }
             await saveProfile();
             await loadAllData();
@@ -3352,7 +3332,9 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
         profile = {
             name: 'Atler',
             avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
-            theme: 'default'
+            theme: 'default',
+            currency: 'INR',
+            lastNotified: null
         };
         localStorage.removeItem('atler_theme');
         applyTheme('default');
