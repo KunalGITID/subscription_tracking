@@ -3,13 +3,55 @@
 // ═══════════════════════════════════════════
 const SUPABASE_URL  = 'https://cnxurdingdhhdcjgujkz.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNueHVyZGluZ2RoaGRjamd1amt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NzQ1OTIsImV4cCI6MjA5MDQ1MDU5Mn0.nX0-MR9C1fmKRA9lHw0FBp_r0LYYlntbz9B7BW7HKd8';
+
+// IndexedDB-backed storage adapter — survives PWA force-quit on iOS/Android
+// unlike localStorage which can be evicted by the OS on process kill.
+const idbStorage = (() => {
+    const DB_NAME = 'atler_auth';
+    const STORE   = 'kv';
+    function open() {
+        return new Promise((res, rej) => {
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = e => e.target.result.createObjectStore(STORE);
+            req.onsuccess = e => res(e.target.result);
+            req.onerror   = () => rej(req.error);
+        });
+    }
+    return {
+        async getItem(key) {
+            const db = await open();
+            return new Promise((res, rej) => {
+                const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
+                req.onsuccess = () => res(req.result ?? null);
+                req.onerror   = () => rej(req.error);
+            });
+        },
+        async setItem(key, value) {
+            const db = await open();
+            return new Promise((res, rej) => {
+                const req = db.transaction(STORE, 'readwrite').objectStore(STORE).put(value, key);
+                req.onsuccess = () => res();
+                req.onerror   = () => rej(req.error);
+            });
+        },
+        async removeItem(key) {
+            const db = await open();
+            return new Promise((res, rej) => {
+                const req = db.transaction(STORE, 'readwrite').objectStore(STORE).delete(key);
+                req.onsuccess = () => res();
+                req.onerror   = () => rej(req.error);
+            });
+        },
+    };
+})();
+
 const sb = window.supabase?.createClient
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
         auth: {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
-            storage: localStorage
+            storage: idbStorage,
         }
     })
     : null;
@@ -36,6 +78,7 @@ let analyticsSubSearch = '';
 let analyticsExpSearch = '';
 let currentPageId = 'dashboard-page';
 let pageHistory = [];
+let isExplicitSignOut = false;
 let isSubmittingSubscription = false;
 let isSubmittingExpense = false;
 let isSavingExpenseEdit = false;
@@ -409,6 +452,7 @@ document.getElementById('reset-password-btn').addEventListener('click', async ()
 });
 
 document.getElementById('signout-btn').addEventListener('click', async () => {
+    isExplicitSignOut = true;
     await sb.auth.signOut();
 });
 
@@ -501,6 +545,13 @@ async function ensureUserProfile(user = currentUser) {
 
     const safeName = String(rawName).trim() || 'Atler';
 
+    // Extract avatar from OAuth provider metadata (Google sends avatar_url or picture).
+    const oauthAvatar =
+        user.user_metadata?.avatar_url ||
+        user.user_metadata?.picture ||
+        null;
+    const fallbackAvatar = oauthAvatar || profile.avatar;
+
     try {
         const { data: existingProfile } = await sb
             .from('profiles')
@@ -512,7 +563,7 @@ async function ensureUserProfile(user = currentUser) {
             await sb.from('profiles').upsert({
                 user_id: user.id,
                 name: safeName,
-                avatar: profile.avatar,
+                avatar: fallbackAvatar,
                 theme: fallbackTheme,
                 currency: 'INR',
                 last_notified: profile.lastNotified || null,
@@ -527,8 +578,8 @@ async function ensureUserProfile(user = currentUser) {
             patch.name = safeName;
             shouldPatch = true;
         }
-        if (!existingProfile.avatar && profile.avatar) {
-            patch.avatar = profile.avatar;
+        if (!existingProfile.avatar && fallbackAvatar) {
+            patch.avatar = fallbackAvatar;
             shouldPatch = true;
         }
         if (!existingProfile.theme) {
@@ -1185,7 +1236,7 @@ function renderMonthlyReview() {
     const now = new Date();
     const thisMonthExpenses = expenses.filter(e => isWithinRange(e.date, 'month'));
     const manualThisMonth = thisMonthExpenses.filter(e => e.type === 'manual');
-    const monthlyExpenseTotal = thisMonthExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    const monthlyExpenseTotal = manualThisMonth.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
     const activeSubs = subscriptions.filter(s => !s.paused);
 
     const categoryTotals = {};
@@ -2813,16 +2864,16 @@ async function renderApp() {
     }
 
     const now = new Date();
-    const thisMonthExpenses = expenses
-        .filter(e => { const d = parseDateValue(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
+    const thisMonthManualExpenses = expenses
+        .filter(e => e.type === 'manual' && (() => { const d = parseDateValue(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })())
         .reduce((s,e) => s + parseFloat(e.amount), 0);
-    animateCounter('total-spend', totalMonthly + thisMonthExpenses, 400);
+    animateCounter('total-spend', totalMonthly + thisMonthManualExpenses, 400);
     animateCounter('ytd-spend', totalMonthly, 400);
 
     const dailyAvgEl = document.getElementById('daily-avg');
     if (dailyAvgEl) {
         const daysElapsed = now.getDate();
-        const totalSpend  = totalMonthly + thisMonthExpenses;
+        const totalSpend  = totalMonthly + thisMonthManualExpenses;
         const dailyAvg    = totalSpend / daysElapsed;
         if (totalSpend > 0) {
             dailyAvgEl.textContent = `₹${dailyAvg.toLocaleString('en-IN', {
@@ -3315,15 +3366,20 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
         subscriptions = [];
         categories = [];
         expenses = [];
+        const savedTheme = localStorage.getItem('atler_theme') || 'default';
         profile = {
             name: 'Atler',
             avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150',
-            theme: 'default',
+            theme: savedTheme,
             currency: 'INR',
             lastNotified: null
         };
-        localStorage.removeItem('atler_theme');
-        applyTheme('default');
+        // Only wipe theme preference on an intentional sign-out (not token expiry).
+        if (isExplicitSignOut) {
+            localStorage.removeItem('atler_theme');
+            applyTheme('default');
+        }
+        isExplicitSignOut = false;
         authScreen.classList.remove('hidden');
     }
 });
