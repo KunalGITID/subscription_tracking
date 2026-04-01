@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Atler</title>
 
     <!-- PWA Manifest & iOS Support -->
@@ -17,11 +17,12 @@
 
     <script>
         (function () {
-            const isGithubPages = location.hostname === 'kunalgitid.github.io';
-            const wrongRootPath = location.pathname === '/' || location.pathname === '/index.html';
-            if (isGithubPages && wrongRootPath) {
-                const next = '/ATLER/' + (location.search || '') + (location.hash || '');
-                location.replace(next);
+            // Must match your GitHub repository name (user.github.io/THIS_SEGMENT/).
+            var githubPagesRepo = 'ATLER';
+            var isGithubUserSite = /\.github\.io$/i.test(location.hostname);
+            var atUserSiteRoot = location.pathname === '/' || location.pathname === '/index.html';
+            if (isGithubUserSite && atUserSiteRoot && githubPagesRepo) {
+                location.replace('/' + githubPagesRepo + '/' + (location.search || '') + (location.hash || ''));
             }
         })();
     </script>
@@ -198,7 +199,7 @@
         })();
     </script>
 
-    <link rel="stylesheet" href="./style.css?v=19">
+    <link rel="stylesheet" href="./style.css?v=20">
   <style>
     #ls-star-container {
       position: absolute;
@@ -898,31 +899,6 @@
                     </div>
                 </div>
             </section>
-            <!-- Currency — collapsible -->
-            <section class="profile-collapse-section">
-                <button class="profile-collapse-header" id="currency-toggle" aria-expanded="false"
-                    onclick="toggleProfileSection('currency-body','currency-chevron')">
-                    <span class="label" style="margin:0;">Currency</span>
-                    <span class="material-symbols-outlined profile-collapse-chevron"
-                        id="currency-chevron">chevron_right</span>
-                </button>
-                <div id="currency-body" class="profile-collapse-body">
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <button class="currency-pill" data-currency="INR"
-                            style="background:var(--surface-low);border:2px solid var(--primary);color:var(--primary);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">₹
-                            INR</button>
-                        <button class="currency-pill" data-currency="USD"
-                            style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">$
-                            USD</button>
-                        <button class="currency-pill" data-currency="EUR"
-                            style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">€
-                            EUR</button>
-                        <button class="currency-pill" data-currency="GBP"
-                            style="background:var(--surface-low);border:2px solid var(--glass-border);color:var(--on-surface-variant);padding:10px 20px;border-radius:var(--radius-full);font-size:0.9rem;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:border-color 0.2s,color 0.2s;">£
-                            GBP</button>
-                    </div>
-                </div>
-            </section>
 
             <!-- Theme — collapsible -->
             <section class="profile-collapse-section">
@@ -1261,7 +1237,7 @@
     <div id="context-overlay" style="position:fixed;inset:0;z-index:599;display:none;"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script src="./script.js?v=19"></script>
+    <script src="./script.js?v=20"></script>
 
     <!-- Service Worker -->
     <script>
@@ -1272,6 +1248,15 @@
                 } catch (_) { }
             });
         }
+    </script>
+    <!-- iOS / PWA: discourage pinch and double-tap zoom (native-app feel) -->
+    <script>
+        (function () {
+            function blockGesture(e) { e.preventDefault(); }
+            document.addEventListener('gesturestart', blockGesture, { passive: false });
+            document.addEventListener('gesturechange', blockGesture, { passive: false });
+            document.addEventListener('gestureend', blockGesture, { passive: false });
+        })();
     </script>
 </body>
 
