@@ -40,6 +40,9 @@
   --spacing-6: 1.5rem;
   --spacing-8: 2rem;
   --spacing-12: 3rem;
+
+  /* Align with fixed .topbar: safe area + 64px bar + 8px breathing room */
+  --page-pad-top: calc(72px + env(safe-area-inset-top, 0px));
   background-color: #0e0e0e;
 }
 
@@ -72,7 +75,7 @@ body {
   color: var(--on-surface);
   font-family: var(--font-body);
   line-height: 1.5;
-  overscroll-behavior: none;
+  /* Keep horizontal page shift minimal without killing vertical momentum (iOS) */
   overscroll-behavior-x: none;
   touch-action: manipulation;
   overflow-x: hidden;
@@ -94,13 +97,12 @@ body {
   position: relative;
   max-width: 600px;
   margin: 0 auto;
-  padding-top: calc(72px + env(safe-area-inset-top, 0px));
-  overscroll-behavior-y: contain;
-  overscroll-behavior-x: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: 0;
   padding-left: max(var(--spacing-6), env(safe-area-inset-left, 0px));
   padding-right: max(var(--spacing-6), env(safe-area-inset-right, 0px));
   padding-bottom: 140px;
-  overflow-x: clip;
   max-width: min(600px, 100%);
 }
 
@@ -848,7 +850,7 @@ button.list-item {
   display: none;
   position: absolute;
   top: 0; left: 0; right: 0;
-  padding-top: 72px;
+  padding-top: var(--page-pad-top);
   padding-bottom: 140px;
   will-change: transform, opacity;
 }
@@ -1415,7 +1417,7 @@ button.list-item {
 
 #toast {
   position: fixed;
-  top: 72px;
+  top: var(--page-pad-top);
   left: 50%;
   transform: translateX(-50%) translateY(-12px);
   background: var(--surface-high);
@@ -1442,7 +1444,7 @@ button.list-item {
 /* ── Offline banner ── */
 #offline-banner {
   position: fixed;
-  top: 64px;
+  top: calc(64px + env(safe-area-inset-top, 0px));
   left: 0;
   right: 0;
   background: var(--error-bg);
