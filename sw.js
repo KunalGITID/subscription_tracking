@@ -1,10 +1,11 @@
-const CACHE_NAME = 'atler-v15';
+const CACHE_NAME = 'atler-v20';
 
 const APP_SHELL = [
   './',
   './index.html',
-  './style.css?v=12',
-  './script.js?v=14',
+  './offline.html',
+  './style.css?v=18',
+  './script.js?v=18',
   './manifest.json?v=15',
   './apple-touch-icon.png',
 ];
@@ -77,7 +78,7 @@ self.addEventListener('fetch', event => {
           }
           return response;
         })
-        .catch(() => caches.match(request).then(cached => cached || caches.match('./index.html')))
+        .catch(() => caches.match(request).then(cached => cached || caches.match('./offline.html')))
     );
     return;
   }
