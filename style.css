@@ -46,6 +46,8 @@
 html {
   background-color: #0e0e0e;
   transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* ── Reset ── */
@@ -69,6 +71,18 @@ body {
   font-family: var(--font-body);
   line-height: 1.5;
   overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+/* iOS: avoid auto-zoom when focusing inputs smaller than 16px */
+@media (max-width: 600px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  .analytics-search-input,
+  .account-input {
+    font-size: 16px !important;
+  }
 }
 
 .container {
@@ -2168,14 +2182,6 @@ section {
   color: #ffffff !important;
 }
 
-.currency-pill {
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s ease !important;
-}
-.currency-pill:hover {
-  transform: translateY(-3px) scale(1.06);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25) !important;
-}
-
 /* ── Touch: reset new hover transforms ──────────────────────────── */
 @media (hover: none) and (pointer: coarse) {
   .trend-summary-card:hover,
@@ -2194,11 +2200,6 @@ section {
   }
   .theme-chip:hover > span {
     color: inherit !important;
-  }
-
-  .currency-pill:hover {
-    transform: none;
-    box-shadow: none !important;
   }
 }
 
