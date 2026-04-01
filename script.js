@@ -41,9 +41,33 @@ let isSubmittingExpense = false;
 let isSavingExpenseEdit = false;
 let lastLoadError = '';
 let reminderPreferences = JSON.parse(localStorage.getItem('atler_reminder_prefs') || '{}');
+let activeSheetExpenseId = null;
 
 const presetCategories = ['Entertainment','Productivity','Utilities','Health','Food','Education'];
 const navItems = document.querySelectorAll('.nav-item');
+
+async function sbWrite(fn) {
+    try {
+        await fn();
+    } catch (err) {
+        console.error('Supabase write error:', err);
+        showToast('Could not save — check your connection');
+    }
+}
+
+function haptic(style='light') {
+    if (!navigator.vibrate) return;
+    const patterns = { light:15, medium:30, heavy:50, success:[15,50,15], error:[30,50,30,50,30] };
+    navigator.vibrate(patterns[style] || 15);
+}
+
+function debounce(fn, delay=600) {
+    let t;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), delay);
+    };
+}
 
 let _toastTimer = null;
 function showToast(message, duration = 2200) {
@@ -59,53 +83,39 @@ function showToast(message, duration = 2200) {
     }, duration);
 }
 
-const confirmSheetOverlay = document.getElementById('confirm-sheet-overlay');
-const confirmSheetKicker = document.getElementById('confirm-sheet-kicker');
-const confirmSheetTitle = document.getElementById('confirm-sheet-title');
-const confirmSheetMessage = document.getElementById('confirm-sheet-message');
-const confirmSheetCancel = document.getElementById('confirm-sheet-cancel');
-const confirmSheetConfirm = document.getElementById('confirm-sheet-confirm');
-let pendingConfirmResolve = null;
+const confirmOverlay = document.getElementById('confirm-overlay');
+const confirmMessage = document.getElementById('confirm-message');
+const confirmOkBtn = document.getElementById('confirm-ok-btn');
+const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+let confirmHandler = null;
 
-function closeConfirmSheet(result) {
-    if (!pendingConfirmResolve) return;
-    const resolve = pendingConfirmResolve;
-    pendingConfirmResolve = null;
-    confirmSheetOverlay?.classList.remove('is-open');
-    confirmSheetConfirm?.classList.remove('is-danger');
-    resolve(result);
+function closeConfirm() {
+    if (confirmOverlay) confirmOverlay.classList.remove('open');
+    document.body.style.overflow = '';
+    confirmHandler = null;
 }
 
-function confirmAction({
-    title = 'Are you sure?',
-    message = 'This action cannot be undone.',
-    confirmLabel = 'Continue',
-    cancelLabel = 'Cancel',
-    tone = 'default',
-    kicker = 'Please confirm'
-} = {}) {
-    if (!confirmSheetOverlay || !confirmSheetTitle || !confirmSheetMessage || !confirmSheetCancel || !confirmSheetConfirm) {
-        return Promise.resolve(window.confirm(message));
-    }
-    if (pendingConfirmResolve) {
-        closeConfirmSheet(false);
-    }
-    confirmSheetKicker.textContent = kicker;
-    confirmSheetTitle.textContent = title;
-    confirmSheetMessage.textContent = message;
-    confirmSheetCancel.textContent = cancelLabel;
-    confirmSheetConfirm.textContent = confirmLabel;
-    confirmSheetConfirm.classList.toggle('is-danger', tone === 'danger');
-    confirmSheetOverlay.classList.add('is-open');
-    return new Promise(resolve => {
-        pendingConfirmResolve = resolve;
-    });
+function showConfirm(message, onConfirm) {
+    if (!confirmOverlay || !confirmMessage || !confirmOkBtn || !confirmCancelBtn) return;
+    confirmMessage.textContent = message;
+    confirmHandler = onConfirm;
+    confirmOverlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
 }
 
-confirmSheetCancel?.addEventListener('click', () => closeConfirmSheet(false));
-confirmSheetConfirm?.addEventListener('click', () => closeConfirmSheet(true));
-confirmSheetOverlay?.addEventListener('click', e => {
-    if (e.target === confirmSheetOverlay) closeConfirmSheet(false);
+confirmOkBtn?.addEventListener('click', async () => {
+    const handler = confirmHandler;
+    haptic('medium');
+    if (handler) await handler();
+    closeConfirm();
+});
+
+confirmCancelBtn?.addEventListener('click', () => {
+    haptic('light');
+    closeConfirm();
+});
+confirmOverlay?.addEventListener('click', e => {
+    if (e.target === confirmOverlay) closeConfirm();
 });
 
 // ═══════════════════════════════════════════
@@ -193,12 +203,9 @@ function applyTheme(name) {
 
     document.querySelectorAll('.theme-chip').forEach(chip => {
         const dot = chip.querySelector('div');
-        if (dot) {
-            dot.style.border =
-                chip.dataset.theme === name
-                    ? `2px solid ${t.primary}`
-                    : '2px solid transparent';
-        }
+        const label = chip.querySelector('span');
+        if (dot) dot.style.border = '2px solid transparent';
+        if (label) label.style.color = chip.dataset.theme === name ? '#ffffff' : '';
     });
 
     profile.theme = name;
@@ -438,6 +445,7 @@ async function loadAllData() {
         price:             s.price,
         dateAdded:         s.date_added,
         startDate:         s.start_date,
+        reminder:          s.reminder || 'none',
         category:          s.category || 'unlisted',
         lastLoggedRenewal: s.last_logged_renewal,
         paused:            s.paused || false,
@@ -457,23 +465,20 @@ async function loadAllData() {
         type:   e.type || 'manual',
     }));
 
+    await cleanupLegacyAutoDuplicates();
     applyTheme(profile.theme);
 }
 
 async function saveProfile() {
     if (!currentUser) return;
-    try {
-        await sb.from('profiles').upsert({
+    await sbWrite(() => sb.from('profiles').upsert({
             user_id:       currentUser.id,
             name:          profile.name,
             avatar:        profile.avatar,
             theme:         profile.theme,
             last_notified: profile.lastNotified || null,
             currency:      profile.currency || 'INR',
-        });
-    } catch {
-        if (!navigator.onLine) showToast('Saved locally — will sync when online');
-    }
+        }));
 }
 
 async function ensureUserProfile(user = currentUser) {
@@ -542,8 +547,7 @@ async function ensureUserProfile(user = currentUser) {
 
 async function upsertSubscription(sub) {
     if (!currentUser) return;
-    try {
-        await sb.from('subscriptions').upsert({
+    await sbWrite(() => sb.from('subscriptions').upsert({
             id:                  sub.id,
             user_id:             currentUser.id,
             name:                sub.name,
@@ -551,39 +555,35 @@ async function upsertSubscription(sub) {
             price:               sub.price,
             date_added:          sub.dateAdded,
             start_date:          sub.startDate,
+            reminder:            sub.reminder || 'none',
             category:            sub.category || 'unlisted',
             last_logged_renewal: sub.lastLoggedRenewal || null,
             paused:              sub.paused || false,
-        });
-    } catch {
-        if (!navigator.onLine) showToast('Saved locally — will sync when online');
-    }
+        }));
 }
 
 async function deleteSubscription(id) {
     if (!currentUser) return;
-    await sb.from('subscriptions').delete().eq('id', id).eq('user_id', currentUser.id);
-    await sb.from('expenses').delete().eq('user_id', currentUser.id).like('id', `auto_${id}_%`);
+    await sbWrite(() => Promise.all([
+        sb.from('subscriptions').delete().eq('id', id).eq('user_id', currentUser.id),
+        sb.from('expenses').delete().eq('user_id', currentUser.id).like('id', `auto_${id}_%`)
+    ]));
     expenses = expenses.filter(exp => !String(exp.id).startsWith(`auto_${id}_`));
 }
 
 async function upsertCategory(cat) {
     if (!currentUser) return;
-    try {
-        await sb.from('categories').upsert({
+    await sbWrite(() => sb.from('categories').upsert({
             id:      cat.id,
             user_id: currentUser.id,
             name:    cat.name,
             budget:  cat.budget || null,
-        });
-    } catch {
-        if (!navigator.onLine) showToast('Saved locally — will sync when online');
-    }
+        }));
 }
 
 async function deleteCategoryFromDB(id) {
     if (!currentUser) return;
-    await sb.from('categories').delete().eq('id', id).eq('user_id', currentUser.id);
+    await sbWrite(() => sb.from('categories').delete().eq('id', id).eq('user_id', currentUser.id));
     const affected = subscriptions.filter(s => s.category === id);
     for (const sub of affected) {
         sub.category = 'unlisted';
@@ -592,47 +592,54 @@ async function deleteCategoryFromDB(id) {
 }
 
 window.deleteCategory = async function(id) {
-    const approved = await confirmAction({
-        title: 'Delete this category?',
-        message: 'Subscriptions inside it will be moved to Unlisted so nothing gets lost.',
-        confirmLabel: 'Delete category',
-        tone: 'danger',
-        kicker: 'Category change'
+    showConfirm('Delete this category? Subscriptions inside it will be moved to Unlisted so nothing gets lost.', async () => {
+        categories = categories.filter(c => c.id !== id);
+        await deleteCategoryFromDB(id);
+        renderAnalytics();
     });
-    if (!approved) return;
-    categories = categories.filter(c => c.id !== id);
-    await deleteCategoryFromDB(id);
-    renderAnalytics();
 };
 
 async function insertExpense(exp) {
     if (!currentUser) return;
-    try {
-        await sb.from('expenses').insert({
+    await sbWrite(() => sb.from('expenses').insert({
             id:      exp.id,
             user_id: currentUser.id,
             name:    exp.name,
             amount:  exp.amount,
             date:    exp.date,
             type:    exp.type || 'manual',
-        });
-    } catch {
-        if (!navigator.onLine) showToast('Saved locally — will sync when online');
-    }
+        }));
+}
+
+async function updateExpense(exp) {
+    if (!currentUser) return;
+    await sbWrite(() => sb
+        .from('expenses')
+        .update({
+            name: exp.name,
+            amount: exp.amount,
+            date: exp.date,
+        })
+        .eq('id', exp.id)
+        .eq('user_id', currentUser.id));
 }
 
 async function clearAllData() {
     if (!currentUser) return;
     const uid = currentUser.id;
-    await Promise.all([
+    await sbWrite(() => Promise.all([
         sb.from('subscriptions').delete().eq('user_id', uid),
         sb.from('categories').delete().eq('user_id', uid),
         sb.from('expenses').delete().eq('user_id', uid),
-    ]);
+    ]));
     subscriptions = [];
     categories    = [];
     expenses      = [];
 }
+
+const debouncedUpsertSub = debounce(upsertSubscription, 600);
+const debouncedUpsertCat = debounce(upsertCategory, 600);
+const debouncedSaveProfile = debounce(saveProfile, 800);
 
 // ═══════════════════════════════════════════
 // UTILITIES
@@ -681,6 +688,16 @@ function wireEmptyStateActions(scope = document) {
 function pad2(value) {
     return String(value).padStart(2, '0');
 }
+function parseDateValue(dateLike) {
+    if (dateLike instanceof Date) return new Date(dateLike.getTime());
+    if (typeof dateLike === 'string') {
+        const match = dateLike.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+            return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        }
+    }
+    return new Date(dateLike);
+}
 function getLocalDateKey(date = new Date()) {
     return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
@@ -688,7 +705,7 @@ function getLocalDateTimeString(date = new Date()) {
     return `${getLocalDateKey(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 function formatDate(ds) {
-    return new Date(ds).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    return parseDateValue(ds).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
 function todayISO() { return getLocalDateKey(new Date()); }
 
@@ -780,10 +797,86 @@ function getCurrencySymbol() {
     const symbols = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
     return symbols[profile.currency] || '₹';
 }
+function animateCounter(elementId, targetValue, duration = 400) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const startValue = parseFloat(el.textContent.replace(/[^0-9.]/g, '')) || 0;
+    if (Math.abs(targetValue - startValue) < 0.01) {
+        el.textContent = targetValue.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        return;
+    }
+    const startTime = performance.now();
+    function tick(now) {
+        const elapsed  = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const ease     = 1 - Math.pow(1 - progress, 3);
+        const current  = startValue + (targetValue - startValue) * ease;
+        el.textContent = current.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+}
+
+function getSubAge(dateAdded) {
+    const start  = new Date(dateAdded);
+    const now    = new Date();
+    let years    = now.getFullYear() - start.getFullYear();
+    let months   = now.getMonth()    - start.getMonth();
+    if (months < 0) { years--; months += 12; }
+    if (years === 0 && months === 0) return 'Less than a month';
+    const parts = [];
+    if (years  > 0) parts.push(`${years} year${years   > 1 ? 's' : ''}`);
+    if (months > 0) parts.push(`${months} month${months > 1 ? 's' : ''}`);
+    return `You've had this for ${parts.join(' ')}`;
+}
+
 function formatAmount(amount) {
     const locales = { INR: 'en-IN', USD: 'en-US', EUR: 'de-DE', GBP: 'en-GB' };
     const locale  = locales[profile.currency] || 'en-IN';
     return parseFloat(amount).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function normalizeDateOnly(dateLike) {
+    const d = parseDateValue(dateLike);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function addMonthsClamped(dateLike, months) {
+    const base = normalizeDateOnly(dateLike);
+    const originalDay = base.getDate();
+    const next = new Date(base);
+    next.setDate(1);
+    next.setMonth(next.getMonth() + months);
+    const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(originalDay, lastDay));
+    return next;
+}
+
+function addYearsClamped(dateLike, years) {
+    const base = normalizeDateOnly(dateLike);
+    const originalDay = base.getDate();
+    const next = new Date(base);
+    next.setDate(1);
+    next.setFullYear(next.getFullYear() + years);
+    const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(originalDay, lastDay));
+    return next;
+}
+
+function addBillingCycle(dateLike, cycle, step = 1) {
+    if (cycle === 'Monthly') return addMonthsClamped(dateLike, step);
+    if (cycle === 'Yearly') return addYearsClamped(dateLike, step);
+    const days = parseInt(cycle, 10);
+    const next = normalizeDateOnly(dateLike);
+    next.setDate(next.getDate() + ((Number.isFinite(days) && days > 0 ? days : 30) * step));
+    return next;
 }
 
 function getMonthlyCost(sub) {
@@ -795,26 +888,27 @@ function getMonthlyCost(sub) {
     return (price / days) * 30;
 }
 function getNextRenewalDate(dateAdded, cycle) {
-    const start = new Date(dateAdded);
-    const today = new Date(); today.setHours(0,0,0,0);
-    let next = new Date(start); next.setHours(0,0,0,0);
-    if (cycle === 'Yearly') {
-        while (next <= today) next.setFullYear(next.getFullYear() + 1);
-    } else {
-        const inc = cycle === 'Monthly' ? 30 : parseInt(cycle);
-        while (next <= today) next.setDate(next.getDate() + inc);
+    const start = normalizeDateOnly(dateAdded);
+    const today = normalizeDateOnly(new Date());
+    let next = new Date(start);
+    while (next <= today) {
+        next = addBillingCycle(next, cycle, 1);
     }
     return next;
 }
 function getLastRenewalDate(dateAdded, cycle) {
-    const next = getNextRenewalDate(dateAdded, cycle);
-    const last = new Date(next);
-    if (cycle === 'Yearly') last.setFullYear(last.getFullYear() - 1);
-    else { const inc = cycle === 'Monthly' ? 30 : parseInt(cycle); last.setDate(last.getDate() - inc); }
+    const start = normalizeDateOnly(dateAdded);
+    const today = normalizeDateOnly(new Date());
+    let last = new Date(start);
+    let next = addBillingCycle(last, cycle, 1);
+    while (next <= today) {
+        last = next;
+        next = addBillingCycle(next, cycle, 1);
+    }
     return last;
 }
 function isWithinRange(dateString, range) {
-    const date = new Date(dateString);
+    const date = normalizeDateOnly(dateString);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -842,23 +936,241 @@ function colorFromName(name) {
     return palette[Math.abs(hash) % palette.length];
 }
 
+function normalizeForIconMatch(name) {
+    return (name || '')
+        .toLowerCase()
+        .replace(/\b(can|bottle|diet|zero|lite|sugar free|classic|original|energy|drink|cold|hot|extra|small|large|medium|pack|packet|kg|gm|ml|litre|liter|rs|rupees|inr)\b/g, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+}
+
+const EXPENSE_ICON_MAP = [
+    { keywords: ['redbull','redbul'],                        icon: 'bolt',                     color: '#FFD700' },
+    { keywords: ['monster'],                                  icon: 'bolt',                     color: '#6ED800' },
+    { keywords: ['rockstar'],                                 icon: 'bolt',                     color: '#F5C400' },
+    { keywords: ['coke','cocacola','coca'],                   icon: 'local_bar',                color: '#E61C24' },
+    { keywords: ['pepsi'],                                    icon: 'local_bar',                color: '#004B93' },
+    { keywords: ['sprite'],                                   icon: 'local_bar',                color: '#00A550' },
+    { keywords: ['7up','sevenup'],                            icon: 'local_bar',                color: '#007A33' },
+    { keywords: ['fanta'],                                    icon: 'local_bar',                color: '#FF6600' },
+    { keywords: ['thumbsup','thumsup'],                       icon: 'local_bar',                color: '#C8102E' },
+    { keywords: ['limca'],                                    icon: 'local_bar',                color: '#00A878' },
+    { keywords: ['frooti','maaza','slice','appyfizz'],        icon: 'local_bar',                color: '#FF8C00' },
+    { keywords: ['coffee','cafe','espresso','latte','cappuccino','barista'], icon: 'coffee',    color: '#6F4E37' },
+    { keywords: ['starbucks'],                                icon: 'coffee',                   color: '#00704A' },
+    { keywords: ['chaayos','chai','tea','adrak'],              icon: 'emoji_food_beverage',      color: '#C8A951' },
+    { keywords: ['bluetokai'],                                icon: 'coffee',                   color: '#1A1A1A' },
+    { keywords: ['zomato'],                                   icon: 'delivery_dining',          color: '#E23744' },
+    { keywords: ['swiggy'],                                   icon: 'delivery_dining',          color: '#FC8019' },
+    { keywords: ['blinkit','grofers'],                        icon: 'delivery_dining',          color: '#F8E71C' },
+    { keywords: ['zepto'],                                    icon: 'delivery_dining',          color: '#8B2FC9' },
+    { keywords: ['dunzo'],                                    icon: 'delivery_dining',          color: '#00C4B4' },
+    { keywords: ['mcdonalds','mcdonald','mcd'],               icon: 'fastfood',                 color: '#FFC72C' },
+    { keywords: ['dominos','domino'],                         icon: 'local_pizza',              color: '#006491' },
+    { keywords: ['pizzahut'],                                 icon: 'local_pizza',              color: '#EE3124' },
+    { keywords: ['kfc'],                                      icon: 'fastfood',                 color: '#F40027' },
+    { keywords: ['subway'],                                   icon: 'lunch_dining',             color: '#009541' },
+    { keywords: ['burgerking'],                               icon: 'fastfood',                 color: '#FF8C00' },
+    { keywords: ['haldirams','haldiram'],                     icon: 'set_meal',                 color: '#FF6F00' },
+    { keywords: ['bikanervala','bikano'],                     icon: 'set_meal',                 color: '#FF8F00' },
+    { keywords: ['vadapav','vadapao','vada'],                 icon: 'fastfood',                 color: '#FF7043' },
+    { keywords: ['dabeli'],                                   icon: 'fastfood',                 color: '#FF5722' },
+    { keywords: ['pavbhaji','pav'],                           icon: 'fastfood',                 color: '#FF6D00' },
+    { keywords: ['samosa'],                                   icon: 'fastfood',                 color: '#FFA000' },
+    { keywords: ['momos','momo'],                             icon: 'fastfood',                 color: '#BDBDBD' },
+    { keywords: ['biryani'],                                  icon: 'rice_bowl',                color: '#FFA726' },
+    { keywords: ['roll','kathi','frankie'],                   icon: 'lunch_dining',             color: '#FF7043' },
+    { keywords: ['dosa','idli','uttapam'],                    icon: 'breakfast_dining',         color: '#FFCC02' },
+    { keywords: ['pizza'],                                    icon: 'local_pizza',              color: '#FF6B35' },
+    { keywords: ['burger'],                                   icon: 'fastfood',                 color: '#FF6B35' },
+    { keywords: ['maggi','noodles'],                          icon: 'ramen_dining',             color: '#FF5722' },
+    { keywords: ['paneer'],                                   icon: 'set_meal',                 color: '#FFF9C4' },
+    { keywords: ['thali','daal','dal','rice','chawal'],       icon: 'rice_bowl',                color: '#A5D6A7' },
+    { keywords: ['paratha','roti','chapati'],                 icon: 'breakfast_dining',         color: '#FFE082' },
+    { keywords: ['canteen','mess','tiffin','dabba'],          icon: 'restaurant',               color: '#795548' },
+    { keywords: ['dhaba'],                                    icon: 'restaurant',               color: '#8D6E63' },
+    { keywords: ['dmart','bigbazaar','reliance','spencer','more'], icon: 'shopping_basket',     color: '#1976D2' },
+    { keywords: ['kirana'],                                   icon: 'shopping_basket',          color: '#4CAF50' },
+    { keywords: ['milk','amul','dairy'],                      icon: 'water_drop',               color: '#90CAF9' },
+    { keywords: ['eggs','anda'],                              icon: 'egg',                      color: '#FFF9C4' },
+    { keywords: ['bread','loaf'],                             icon: 'breakfast_dining',         color: '#FFCC80' },
+    { keywords: ['grocery','groceries','sabzi','vegetable'],  icon: 'shopping_basket',          color: '#66BB6A' },
+    { keywords: ['xerox','photocopy'],                        icon: 'print',                    color: '#607D8B' },
+    { keywords: ['printout','printing'],                      icon: 'print',                    color: '#546E7A' },
+    { keywords: ['binding','spiral'],                         icon: 'book',                     color: '#5C6BC0' },
+    { keywords: ['stationery','pen','pencil','marker','highlighter'], icon: 'edit',             color: '#7E57C2' },
+    { keywords: ['notebook','register'],                      icon: 'menu_book',                color: '#42A5F5' },
+    { keywords: ['textbook','book','notes'],                  icon: 'menu_book',                color: '#3F51B5' },
+    { keywords: ['calculator','casio'],                       icon: 'calculate',                color: '#78909C' },
+    { keywords: ['labcoat','apron','labmanual'],              icon: 'science',                  color: '#ECEFF1' },
+    { keywords: ['soap','dettol','lifebuoy','dove','lux'],    icon: 'sanitizer',                color: '#80DEEA' },
+    { keywords: ['shampoo','conditioner','pantene','headshoulders'], icon: 'shower',            color: '#B39DDB' },
+    { keywords: ['toothpaste','colgate','pepsodent','sensodyne'], icon: 'dentistry',            color: '#E1F5FE' },
+    { keywords: ['facewash','cleanser','cetaphil'],           icon: 'face',                     color: '#F8BBD0' },
+    { keywords: ['moisturizer','lotion','vaseline','nivea'],  icon: 'spa',                      color: '#FCE4EC' },
+    { keywords: ['deodorant','deo','axe','oldspice'],         icon: 'air_freshener',            color: '#B3E5FC' },
+    { keywords: ['razor','shaving','gillette'],               icon: 'content_cut',              color: '#CFD8DC' },
+    { keywords: ['sanitarypad','sanitary','whisper','stayfree'], icon: 'favorite',              color: '#F48FB1' },
+    { keywords: ['hairoil','coconutoil','parachute','dabur'], icon: 'spa',                      color: '#FFF9C4' },
+    { keywords: ['sunscreen','sunblock','spf'],               icon: 'wb_sunny',                 color: '#FFD54F' },
+    { keywords: ['laundry','dhobi','wash'],                   icon: 'local_laundry_service',    color: '#4FC3F7' },
+    { keywords: ['detergent','surfexcel','ariel','tide','rin'], icon: 'local_laundry_service',  color: '#29B6F6' },
+    { keywords: ['dryclean'],                                 icon: 'dry_cleaning',             color: '#81D4FA' },
+    { keywords: ['medicine','dawa','pharmacy','chemist','apollopharmacy'], icon: 'medication',  color: '#EF5350' },
+    { keywords: ['crocin','paracetamol','dolo','combiflam'],  icon: 'medication',               color: '#EF9A9A' },
+    { keywords: ['doctor','consultation','clinic','hospital'], icon: 'local_hospital',          color: '#F44336' },
+    { keywords: ['vitamins','multivitamin','supplement'],      icon: 'medication',               color: '#66BB6A' },
+    { keywords: ['bloodtest','pathology','diagnostic','labtest'], icon: 'biotech',              color: '#CE93D8' },
+    { keywords: ['metro','metrocard'],                        icon: 'directions_subway',        color: '#1565C0' },
+    { keywords: ['bus','buspass','busticket'],                 icon: 'directions_bus',           color: '#FF8F00' },
+    { keywords: ['localtrain','seasonpass','railwaypass'],     icon: 'train',                    color: '#283593' },
+    { keywords: ['auto','autorickshaw','erickshaw'],           icon: 'local_taxi',               color: '#FFC107' },
+    { keywords: ['uber'],                                     icon: 'local_taxi',               color: '#000000' },
+    { keywords: ['ola'],                                      icon: 'local_taxi',               color: '#3DBE29' },
+    { keywords: ['rapido'],                                   icon: 'two_wheeler',              color: '#FFCB05' },
+    { keywords: ['petrol','fuel','cng','pump'],               icon: 'local_gas_station',        color: '#FF5722' },
+    { keywords: ['parking'],                                  icon: 'local_parking',            color: '#455A64' },
+    { keywords: ['toll'],                                     icon: 'toll',                     color: '#607D8B' },
+    { keywords: ['pg','payingguest'],                         icon: 'home',                     color: '#26A69A' },
+    { keywords: ['hostel','hostelrent'],                      icon: 'home',                     color: '#42A5F5' },
+    { keywords: ['rent','roomrent','flatrent'],               icon: 'home',                     color: '#7E57C2' },
+    { keywords: ['deposit','securitydeposit'],                icon: 'account_balance',          color: '#78909C' },
+    { keywords: ['maintenance','societymaintenance'],          icon: 'home_repair_service',      color: '#8D6E63' },
+    { keywords: ['pillow','bedsheet','blanket','quilt','razai'], icon: 'bed',                   color: '#B0BEC5' },
+    { keywords: ['bucket','mug'],                             icon: 'water',                    color: '#4DD0E1' },
+    { keywords: ['mosquitorepellent','goodknight','allout','mortein'], icon: 'pest_control',    color: '#A5D6A7' },
+    { keywords: ['extensionboard','powerstrip','adapter'],    icon: 'power',                    color: '#FFD54F' },
+    { keywords: ['waterbottle','sipper','thermos','flask'],   icon: 'water_full',               color: '#80DEEA' },
+    { keywords: ['lock','padlock'],                           icon: 'lock',                     color: '#90A4AE' },
+    { keywords: ['clothes','shirt','tshirt','jeans','trouser'], icon: 'checkroom',              color: '#EC407A' },
+    { keywords: ['shoes','sneakers','chappal','sandal','slipper'], icon: 'footprint',           color: '#8D6E63' },
+    { keywords: ['jacket','hoodie','sweatshirt','sweater'],   icon: 'checkroom',                color: '#5C6BC0' },
+    { keywords: ['raincoat','umbrella'],                      icon: 'umbrella',                 color: '#1E88E5' },
+    { keywords: ['bag','backpack','slingbag'],                icon: 'backpack',                 color: '#FF7043' },
+    { keywords: ['spectacles','glasses','contactlens'],       icon: 'visibility',               color: '#29B6F6' },
+    { keywords: ['earphone','headphone','earbuds'],           icon: 'headphones',               color: '#7E57C2' },
+    { keywords: ['movie','cinema','pvr','inox','cinepolis'],  icon: 'movie',                    color: '#9C27B0' },
+    { keywords: ['concert','gig','event','fest'],             icon: 'event',                    color: '#E91E63' },
+    { keywords: ['beer','alcohol','whiskey','vodka','rum','wine','kingfisher'], icon: 'sports_bar', color: '#FF8F00' },
+    { keywords: ['hookah','cigarette','cigar'],               icon: 'smoking_rooms',            color: '#78909C' },
+    { keywords: ['gaming','steam'],                           icon: 'sports_esports',           color: '#5C6BC0' },
+    { keywords: ['trek','hiking','picnic','outing'],          icon: 'hiking',                   color: '#66BB6A' },
+    { keywords: ['tattoo','piercing'],                        icon: 'brush',                    color: '#212121' },
+    { keywords: ['netflix'],                                  icon: 'tv',                       color: '#E50914' },
+    { keywords: ['spotify'],                                  icon: 'music_note',               color: '#1DB954' },
+    { keywords: ['youtube'],                                  icon: 'play_circle',              color: '#FF0000' },
+    { keywords: ['hotstar','disneyplus','disney'],            icon: 'live_tv',                  color: '#0063E5' },
+    { keywords: ['prime','amazonprime'],                      icon: 'tv',                       color: '#00A8E1' },
+    { keywords: ['coursera','udemy','unacademy'],             icon: 'school',                   color: '#F7C948' },
+    { keywords: ['chatgpt','claude','copilot','openai'],      icon: 'smart_toy',                color: '#74AA9C' },
+    { keywords: ['vpn','nordvpn','expressvpn'],               icon: 'vpn_lock',                 color: '#4CAF50' },
+    { keywords: ['icloud','googleone','onedrive','dropbox'],  icon: 'cloud',                    color: '#42A5F5' },
+    { keywords: ['tinder','bumble','hinge'],                  icon: 'favorite',                 color: '#FF4458' },
+    { keywords: ['jio','jiorecharge'],                        icon: 'smartphone',               color: '#0B3D91' },
+    { keywords: ['airtel'],                                   icon: 'smartphone',               color: '#ED1C24' },
+    { keywords: ['vi','vodafone','idea'],                     icon: 'smartphone',               color: '#E60000' },
+    { keywords: ['wifi','broadband','internet','act','hathway'], icon: 'wifi',                  color: '#2196F3' },
+    { keywords: ['recharge','mobilecharge'],                  icon: 'smartphone',               color: '#4CAF50' },
+    { keywords: ['electricity','lightbill','bijli'],          icon: 'bolt',                     color: '#FFC107' },
+    { keywords: ['gas','cylinder','lpg','indane','hpgas','bharatgas'], icon: 'local_fire_department', color: '#FF7043' },
+    { keywords: ['haircut','salon','barber','parlour'],       icon: 'content_cut',              color: '#EC407A' },
+    { keywords: ['gym','fitness','cultfit','curefit'],        icon: 'fitness_center',           color: '#FF5722' },
+    { keywords: ['swimming','pool'],                          icon: 'pool',                     color: '#29B6F6' },
+    { keywords: ['coaching','tuition','privatetuition'],      icon: 'school',                   color: '#7E57C2' },
+    { keywords: ['phonepay','phonepe','gpay','googlepay','paytm','bhim','upi'], icon: 'payments', color: '#5C6BC0' },
+    { keywords: ['atmwithdrawal','cashwithdrawal','atm'],     icon: 'local_atm',                color: '#455A64' },
+    { keywords: ['emi','loan','educationloan'],               icon: 'account_balance',          color: '#607D8B' },
+    { keywords: ['insurance'],                                icon: 'security',                 color: '#3F51B5' },
+    { keywords: ['fine','challan','penalty'],                 icon: 'gavel',                    color: '#EF5350' },
+    { keywords: ['gift','birthday'],                          icon: 'card_giftcard',            color: '#EC407A' },
+    { keywords: ['courier','delivery','dtdc','bluedart'],     icon: 'local_shipping',           color: '#FF8F00' },
+    { keywords: ['temple','church','mosque','gurudwara','donation'], icon: 'place',             color: '#FF8A65' },
+    { keywords: ['passport','visa'],                          icon: 'badge',                    color: '#42A5F5' },
+    { keywords: ['photostudio','photoshoot'],                 icon: 'photo_camera',             color: '#7E57C2' },
+];
+
+function resolveIcon(name, categoryId) {
+    const normalized = normalizeForIconMatch(name);
+
+    for (const entry of EXPENSE_ICON_MAP) {
+        for (const keyword of entry.keywords) {
+            const kw = keyword.replace(/[^a-z0-9]/g, '');
+            if (normalized.includes(kw)) {
+                return { type: 'material', icon: entry.icon, color: entry.color };
+            }
+        }
+    }
+
+    const CATEGORY_ICONS = {
+        'entertainment': { icon: 'tv',                color: '#7E57C2' },
+        'music':         { icon: 'music_note',        color: '#1DB954' },
+        'food':          { icon: 'restaurant',        color: '#FF7043' },
+        'dining':        { icon: 'restaurant',        color: '#FF7043' },
+        'shopping':      { icon: 'shopping_bag',      color: '#42A5F5' },
+        'productivity':  { icon: 'work',              color: '#78909C' },
+        'health':        { icon: 'fitness_center',    color: '#EF5350' },
+        'fitness':       { icon: 'fitness_center',    color: '#EF5350' },
+        'utilities':     { icon: 'bolt',              color: '#FFC107' },
+        'transport':     { icon: 'directions_car',    color: '#42A5F5' },
+        'travel':        { icon: 'flight',            color: '#29B6F6' },
+        'education':     { icon: 'school',            color: '#7E57C2' },
+        'finance':       { icon: 'account_balance',   color: '#78909C' },
+        'gaming':        { icon: 'sports_esports',    color: '#5C6BC0' },
+        'news':          { icon: 'newspaper',         color: '#90A4AE' },
+        'cloud':         { icon: 'cloud',             color: '#42A5F5' },
+        'communication': { icon: 'forum',             color: '#26A69A' },
+        'social':        { icon: 'photo_camera',      color: '#EC407A' },
+        'security':      { icon: 'security',          color: '#3F51B5' },
+    };
+
+    if (categoryId && categoryId !== 'unlisted') {
+        const catName = (categories.find(c => c.id === categoryId)?.name || '').toLowerCase();
+        for (const [keyword, val] of Object.entries(CATEGORY_ICONS)) {
+            if (catName.includes(keyword)) {
+                return { type: 'material', icon: val.icon, color: val.color };
+            }
+        }
+    }
+
+    return { type: 'letter' };
+}
+
+function buildIconCircle(name, categoryId, fallbackColor, size = '48px') {
+    const result = resolveIcon(name, categoryId);
+    const iconColor = result.color || fallbackColor;
+    const bg = iconColor + '22';
+
+    if (result.type === 'material') {
+        return `<div class="list-icon-wrapper" style="width:${size};height:${size};background:${bg};color:${iconColor};display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;"><span class="material-symbols-outlined" style="font-size:calc(${size} * 0.45);">${result.icon}</span></div>`;
+    }
+
+    return `<div class="list-icon-wrapper" style="width:${size};height:${size};background:${fallbackColor}22;color:${fallbackColor};font-size:calc(${size} * 0.45);display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;font-family:var(--font-headline);font-weight:800;">${(name || '?').charAt(0).toUpperCase()}</div>`;
+}
+
 function saveReminderPreferences() {
     localStorage.setItem('atler_reminder_prefs', JSON.stringify(reminderPreferences));
 }
 
 function getReminderPreference(subId) {
-    return reminderPreferences[subId] || '3,1';
+    return subscriptions.find(sub => sub.id === subId)?.reminder || 'none';
 }
 
 function getReminderDays(subId) {
     const pref = getReminderPreference(subId);
-    if (pref === 'off') return [];
-    return pref.split(',').map(v => parseInt(v, 10)).filter(Boolean);
+    if (pref === '3days') return [3];
+    if (pref === '1day') return [1];
+    if (pref === 'both') return [3, 1];
+    return [];
 }
 
 function renderReminderPreference(subId) {
-    document.querySelectorAll('.reminder-pill').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-reminder') === getReminderPreference(subId));
+    const pref = getReminderPreference(subId);
+    const detailMap = { none: 'off', '3days': '3', '1day': '1', both: '3,1' };
+    document.querySelectorAll('#detail-reminder-group .reminder-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-reminder') === detailMap[pref]);
+    });
+    document.querySelectorAll('#edit-reminder-group .reminder-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-reminder-value') === pref);
     });
 }
 
@@ -958,7 +1270,7 @@ function getMonthlySpendTotalForOffset(offset = 0) {
     const start = getMonthStart(offset);
     const end = getMonthEnd(offset);
     return expenses.reduce((sum, exp) => {
-        const expDate = new Date(exp.date);
+        const expDate = parseDateValue(exp.date);
         return expDate >= start && expDate <= end ? sum + parseFloat(exp.amount) : sum;
     }, 0);
 }
@@ -1162,7 +1474,7 @@ async function autoLogRenewals() {
         if (lastRenewal > today) continue;
         const lastRenewalISO = getLocalDateKey(lastRenewal);
         if (sub.lastLoggedRenewal === lastRenewalISO) continue;
-        const subAddedDate = new Date(sub.dateAdded); subAddedDate.setHours(0,0,0,0);
+        const subAddedDate = normalizeDateOnly(sub.dateAdded);
         if (lastRenewal < subAddedDate) continue;
         const expId = 'auto_' + sub.id + '_' + lastRenewalISO;
         const exists = expenses.find(e => e.id === expId);
@@ -1172,8 +1484,51 @@ async function autoLogRenewals() {
             await insertExpense(newExp);
         }
         sub.lastLoggedRenewal = lastRenewalISO;
-        await upsertSubscription(sub);
+        debouncedUpsertSub(sub);
     }
+}
+
+async function cleanupLegacyAutoDuplicates() {
+    if (!currentUser || !sb) return;
+
+    const autoExpenses = expenses.filter(exp => exp.type === 'auto');
+    if (!autoExpenses.length) return;
+
+    const groups = new Map();
+    autoExpenses.forEach(exp => {
+        const sub = subscriptions.find(item => String(exp.id).startsWith(`auto_${item.id}_`));
+        if (!sub) return;
+        if (sub.cycle !== 'Monthly' && sub.cycle !== 'Yearly') return;
+
+        const periodKey = sub.cycle === 'Monthly'
+            ? exp.date.slice(0, 7)
+            : exp.date.slice(0, 4);
+        const key = `${sub.id}:${periodKey}`;
+        const existing = groups.get(key);
+        if (!existing) {
+            groups.set(key, exp);
+            return;
+        }
+        if (parseDateValue(exp.date) > parseDateValue(existing.date)) {
+            groups.set(key, exp);
+        }
+    });
+
+    const duplicateIds = [];
+    autoExpenses.forEach(exp => {
+        const sub = subscriptions.find(item => String(exp.id).startsWith(`auto_${item.id}_`));
+        if (!sub || (sub.cycle !== 'Monthly' && sub.cycle !== 'Yearly')) return;
+        const periodKey = sub.cycle === 'Monthly'
+            ? exp.date.slice(0, 7)
+            : exp.date.slice(0, 4);
+        const keep = groups.get(`${sub.id}:${periodKey}`);
+        if (keep && keep.id !== exp.id) duplicateIds.push(exp.id);
+    });
+
+    if (!duplicateIds.length) return;
+
+    await sb.from('expenses').delete().in('id', duplicateIds).eq('user_id', currentUser.id);
+    expenses = expenses.filter(exp => !duplicateIds.includes(exp.id));
 }
 
 // ═══════════════════════════════════════════
@@ -1181,7 +1536,9 @@ async function autoLogRenewals() {
 // ═══════════════════════════════════════════
 const ROOT_PAGES = new Set(['dashboard-page', 'analytics-page', 'profile-page']);
 
-function switchPage(targetId, options = {}) {
+const swipePageOrder = ['dashboard-page', 'analytics-page', 'profile-page'];
+
+function switchPage(targetId, options = {}, direction = 'right') {
     const { pushHistory: shouldPushHistory = false, preserveHistory = false } = options;
     if (shouldPushHistory && currentPageId && currentPageId !== targetId) {
         pageHistory.push(currentPageId);
@@ -1189,11 +1546,13 @@ function switchPage(targetId, options = {}) {
         pageHistory = [];
     }
 
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'slide-in-right', 'slide-in-left'));
     navItems.forEach(item => item.classList.toggle('active', item.getAttribute('data-target') === targetId));
     const target = document.getElementById(targetId);
     if (target) {
-        target.classList.add('active');
+        const animClass = direction === 'left' ? 'slide-in-left' : 'slide-in-right';
+        target.classList.add('active', animClass);
+        setTimeout(() => target.classList.remove(animClass), 300);
         if (targetId === 'dashboard-page' || targetId === 'analytics-page') renderApp();
         if (targetId === 'profile-page') renderProfilePage();
         currentPageId = targetId;
@@ -1209,8 +1568,14 @@ function goBack() {
 navItems.forEach(item => {
     item.addEventListener('click', e => {
         e.preventDefault();
+        haptic('light');
         const t = item.getAttribute('data-target');
-        if (t) switchPage(t, { preserveHistory: false });
+        if (t) {
+            const currentIdx = swipePageOrder.indexOf(currentPageId);
+            const targetIdx  = swipePageOrder.indexOf(t);
+            const dir = targetIdx >= currentIdx ? 'right' : 'left';
+            switchPage(t, { preserveHistory: false }, dir);
+        }
     });
 });
 
@@ -1230,10 +1595,10 @@ function viewDetails(id) {
     const nextRenewal = getNextRenewalDate(anchor, sub.cycle);
     const category = categories.find(c => c.id === sub.category);
     const monthlyEquivalent = getMonthlyCost(sub);
-    const yearsActive = Math.max(0, (Date.now() - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24 * 365));
+    const yearsActive = Math.max(0, (Date.now() - parseDateValue(anchor).getTime()) / (1000 * 60 * 60 * 24 * 365));
     const spentSoFar = sub.cycle === 'Yearly'
         ? parseFloat(sub.price) * Math.max(1, Math.ceil(yearsActive))
-        : monthlyEquivalent * Math.max(1, Math.ceil(((Date.now() - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24 * 30))));
+        : monthlyEquivalent * Math.max(1, Math.ceil(((Date.now() - parseDateValue(anchor).getTime()) / (1000 * 60 * 60 * 24 * 30))));
     const budget = category?.budget ? parseFloat(category.budget) : null;
     const budgetPressure = budget
         ? `${Math.round((monthlyEquivalent / budget) * 100)}% of ${getCurrencySymbol()}${formatAmount(budget)}`
@@ -1241,6 +1606,10 @@ function viewDetails(id) {
 
     document.getElementById('detail-name').textContent  = sub.name;
     document.getElementById('detail-cycle').textContent = formatCycle(sub.cycle) + ' Plan';
+    const ageEl = document.getElementById('detail-age');
+    if (ageEl) ageEl.textContent = getSubAge(sub.dateAdded);
+    const detailIconEl = document.getElementById('detail-icon-circle');
+    if (detailIconEl) detailIconEl.innerHTML = buildIconCircle(sub.name, sub.category, colorFromName(sub.name), '72px');
     document.getElementById('detail-price').textContent = parseFloat(sub.price).toFixed(2);
     document.getElementById('detail-next-renewal').textContent = formatDate(getLocalDateKey(nextRenewal));
     document.getElementById('detail-spent-so-far').textContent = `${getCurrencySymbol()}${formatAmount(spentSoFar)}`;
@@ -1254,6 +1623,7 @@ function viewDetails(id) {
     document.getElementById('edit-cycle').value      = (sub.cycle === 'Monthly' || sub.cycle === 'Yearly') ? sub.cycle : 'Custom';
     document.getElementById('edit-price').value      = sub.price;
     document.getElementById('edit-start-date').value = sub.startDate || sub.dateAdded?.split('T')[0] || todayISO();
+    renderReminderPreference(sub.id);
 
     const isCustom = sub.cycle !== 'Monthly' && sub.cycle !== 'Yearly';
     document.getElementById('edit-custom-days-group').style.display = isCustom ? 'block' : 'none';
@@ -1303,27 +1673,44 @@ document.getElementById('edit-form').addEventListener('submit', async e => {
         cycle = days;
     }
     const editedName = document.getElementById('edit-name').value.trim() || sub.name;
+    const selectedReminder = document.querySelector('#edit-reminder-group .reminder-pill.active')?.getAttribute('data-reminder-value') || 'none';
     const duplicate  = subscriptions.find(s => s.id !== activeSubId && s.name.toLowerCase().trim() === editedName.toLowerCase().trim());
     if (duplicate) {
-        const approved = await confirmAction({
-            title: 'Keep both subscriptions?',
-            message: `Another subscription called ${editedName} already exists. You can still save this one if it is a separate plan.`,
-            confirmLabel: 'Save anyway',
-            kicker: 'Possible duplicate'
+        showConfirm(`Another subscription called ${editedName} already exists. You can still save this one if it is a separate plan.`, async () => {
+            sub.name      = editedName;
+            sub.cycle     = cycle;
+            sub.price     = parseFloat(document.getElementById('edit-price').value).toFixed(2);
+            sub.startDate = document.getElementById('edit-start-date').value || sub.startDate;
+            sub.reminder  = selectedReminder;
+            await upsertSubscription(sub);
+
+            document.getElementById('detail-name').textContent  = sub.name;
+            document.getElementById('detail-cycle').textContent = formatCycle(sub.cycle) + ' Plan';
+            document.getElementById('detail-price').textContent = parseFloat(sub.price).toFixed(2);
+            renderReminderPreference(sub.id);
+
+            haptic('success');
+            showToast('Saved');
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.textContent = 'Saved ✓';
+            setTimeout(() => { btn.textContent = 'Save Changes'; }, 1500);
         });
-        if (!approved) return;
+        return;
     }
     sub.name      = editedName;
     sub.cycle     = cycle;
     sub.price     = parseFloat(document.getElementById('edit-price').value).toFixed(2);
     sub.startDate = document.getElementById('edit-start-date').value || sub.startDate;
+    sub.reminder  = selectedReminder;
     await upsertSubscription(sub);
 
     // Refresh detail view
     document.getElementById('detail-name').textContent  = sub.name;
     document.getElementById('detail-cycle').textContent = formatCycle(sub.cycle) + ' Plan';
     document.getElementById('detail-price').textContent = parseFloat(sub.price).toFixed(2);
+    renderReminderPreference(sub.id);
 
+    haptic('success');
     showToast('Saved');
     const btn = e.target.querySelector('button[type="submit"]');
     btn.textContent = 'Saved ✓';
@@ -1336,56 +1723,42 @@ document.getElementById('pause-sub-btn').addEventListener('click', async () => {
     if (!sub) return;
     sub.paused = !sub.paused;
     await upsertSubscription(sub);
+    haptic('medium');
     document.getElementById('pause-icon').textContent  = sub.paused ? 'play_arrow' : 'pause';
     document.getElementById('pause-label').textContent = sub.paused ? 'Resume Subscription' : 'Pause Subscription';
     showToast(sub.paused ? 'Paused' : 'Resumed');
 });
 
-document.querySelectorAll('.reminder-pill').forEach(btn => {
+document.querySelectorAll('#edit-reminder-group .reminder-pill').forEach(btn => {
     btn.addEventListener('click', () => {
-        if (!activeSubId) return;
-        reminderPreferences[activeSubId] = btn.getAttribute('data-reminder') || '3,1';
-        saveReminderPreferences();
-        renderReminderPreference(activeSubId);
-        renderNotificationOverview();
-        showToast('Reminder preference updated');
+        document.querySelectorAll('#edit-reminder-group .reminder-pill').forEach(pill => pill.classList.remove('active'));
+        btn.classList.add('active');
     });
 });
 
 // Delete button
 document.getElementById('delete-sub-btn').addEventListener('click', async () => {
-    const approved = await confirmAction({
-        title: 'Delete this subscription?',
-        message: 'Its linked renewal expenses will be removed too, so this change is permanent.',
-        confirmLabel: 'Delete subscription',
-        tone: 'danger',
-        kicker: 'Permanent delete'
+    showConfirm('Delete this subscription? Its linked renewal expenses will be removed too, so this change is permanent.', async () => {
+        haptic('error');
+        await deleteSubscription(activeSubId);
+        subscriptions = subscriptions.filter(s => s.id !== activeSubId);
+        showToast('Subscription deleted');
+        goBack();
+        await renderApp();
     });
-    if (!approved) return;
-    await deleteSubscription(activeSubId);
-    subscriptions = subscriptions.filter(s => s.id !== activeSubId);
-    showToast('Subscription deleted');
-    goBack();
-    await renderApp();
 });
 
 document.getElementById('delete-expense-btn').addEventListener('click', async () => {
     if (!activeExpenseId) return;
-    const approved = await confirmAction({
-        title: 'Delete this expense?',
-        message: 'This will remove the manual expense from your history.',
-        confirmLabel: 'Delete expense',
-        tone: 'danger',
-        kicker: 'Permanent delete'
+    showConfirm('Delete this expense? This will remove the manual expense from your history.', async () => {
+        haptic('error');
+        await sbWrite(() => sb.from('expenses').delete().eq('id', activeExpenseId).eq('user_id', currentUser.id));
+        expenses = expenses.filter(exp => exp.id !== activeExpenseId);
+        activeExpenseId = null;
+        showToast('Expense deleted');
+        goBack();
+        await renderApp();
     });
-    if (!approved) return;
-
-    await sb.from('expenses').delete().eq('id', activeExpenseId).eq('user_id', currentUser.id);
-    expenses = expenses.filter(exp => exp.id !== activeExpenseId);
-    activeExpenseId = null;
-    showToast('Expense deleted');
-    goBack();
-    await renderApp();
 });
 
 document.getElementById('edit-expense-btn').addEventListener('click', () => {
@@ -1414,16 +1787,10 @@ document.getElementById('edit-expense-form').addEventListener('submit', async e 
     expense.date = date;
 
     try {
-        await sb.from('expenses').upsert({
-            id: expense.id,
-            user_id: currentUser.id,
-            name: expense.name,
-            amount: expense.amount,
-            date: expense.date,
-            type: expense.type || 'manual',
-        });
+        await updateExpense(expense);
         viewExpenseDetails(expense.id);
         await renderApp();
+        haptic('success');
         showToast('Expense updated');
     } finally {
         isSavingExpenseEdit = false;
@@ -1615,7 +1982,7 @@ document.getElementById('profile-name-save').addEventListener('click', async () 
     const val = document.getElementById('profile-name').value.trim();
     if (!val) return;
     profile.name = val;
-    await saveProfile();
+    debouncedSaveProfile();
     document.getElementById('user-display-name').textContent = val;
     document.getElementById('profile-display-name-hero').textContent = val;
     const btn = document.getElementById('profile-name-save');
@@ -1625,8 +1992,9 @@ document.getElementById('profile-name-save').addEventListener('click', async () 
 
 document.querySelectorAll('.theme-chip').forEach(chip => {
     chip.addEventListener('click', async () => {
+        haptic('light');
         applyTheme(chip.dataset.theme);
-        await saveProfile();
+        debouncedSaveProfile();
     });
 });
 
@@ -1834,49 +2202,38 @@ document.getElementById('import-file-input').addEventListener('change', function
             showToast('Backup is missing subscriptions');
             return;
         }
-        const approved = await confirmAction({
-            title: 'Replace current data?',
-            message: 'JSON restore replaces your current subscriptions, expenses, and categories with the backup snapshot.',
-            confirmLabel: 'Restore backup',
-            tone: 'danger',
-            kicker: 'Full restore'
+        showConfirm('Replace current data? JSON restore replaces your current subscriptions, expenses, and categories with the backup snapshot.', async () => {
+            closeDataModal();
+            await clearAllData();
+            for (const sub of (parsed.subscriptions || [])) await upsertSubscription(sub);
+            for (const cat of (parsed.categories || [])) await upsertCategory(cat);
+            for (const exp of (parsed.expenses || [])) await insertExpense(exp);
+            if (parsed.profile) {
+                profile.name = parsed.profile.name || profile.name;
+                profile.avatar = parsed.profile.avatar || profile.avatar;
+                profile.theme = parsed.profile.theme || profile.theme;
+                profile.currency = parsed.profile.currency || profile.currency;
+            }
+            await saveProfile();
+            await loadAllData();
+            await renderApp();
+            renderProfilePage();
+            showToast('Backup restored');
         });
-        if (!approved) return;
-        closeDataModal();
-        await clearAllData();
-        for (const sub of (parsed.subscriptions || [])) await upsertSubscription(sub);
-        for (const cat of (parsed.categories || [])) await upsertCategory(cat);
-        for (const exp of (parsed.expenses || [])) await insertExpense(exp);
-        if (parsed.profile) {
-            profile.name = parsed.profile.name || profile.name;
-            profile.avatar = parsed.profile.avatar || profile.avatar;
-            profile.theme = parsed.profile.theme || profile.theme;
-            profile.currency = parsed.profile.currency || profile.currency;
-        }
-        await saveProfile();
-        await loadAllData();
-        await renderApp();
-        renderProfilePage();
-        showToast('Backup restored');
+        return;
     };
     reader.readAsText(file);
     this.value = '';
 });
 
 document.getElementById('dm-clear-btn').addEventListener('click', async () => {
-    const approved = await confirmAction({
-        title: 'Clear all tracked data?',
-        message: 'Subscriptions, expenses, and categories will be deleted. Your account profile stays intact.',
-        confirmLabel: 'Clear everything',
-        tone: 'danger',
-        kicker: 'Destructive action'
+    showConfirm('Clear all tracked data? Subscriptions, expenses, and categories will be deleted. Your account profile stays intact.', async () => {
+        closeDataModal();
+        await clearAllData();
+        await renderApp();
+        renderProfilePage();
+        showToast('All data cleared');
     });
-    if (!approved) return;
-    closeDataModal();
-    await clearAllData();
-    await renderApp();
-    renderProfilePage();
-    showToast('All data cleared');
 });
 
 // ═══════════════════════════════════════════
@@ -1913,13 +2270,42 @@ addForm.addEventListener('submit', async e => {
     if (existing) {
         const existingPrice = getCurrencySymbol() + formatAmount(existing.price);
         const existingCycle = formatCycle(existing.cycle);
-        const approved = await confirmAction({
-            title: 'Possible duplicate subscription',
-            message: `You already have ${existing.name} at ${existingPrice}/${existingCycle}. Keep both if this is a separate plan or family seat.`,
-            confirmLabel: 'Add anyway',
-            kicker: 'Duplicate check'
+        showConfirm(`You already have ${existing.name} at ${existingPrice}/${existingCycle}. Keep both if this is a separate plan or family seat.`, async () => {
+            isSubmittingSubscription = true;
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Saving...';
+            }
+
+            try {
+                const newSub = {
+                    id:        Date.now().toString(),
+                    name,
+                    cycle,
+                    price:     parseFloat(price).toFixed(2),
+                    dateAdded: todayISO(),
+                    startDate: startDate || todayISO(),
+                    reminder:  'none',
+                    category:  'unlisted',
+                    paused:    false,
+                };
+                subscriptions.push(newSub);
+                await upsertSubscription(newSub);
+                haptic('success');
+                addForm.reset();
+                document.getElementById('add-start-date').value = todayISO();
+                customDaysGroup.style.display = 'none';
+                closeAddSheet();
+                await renderApp();
+            } finally {
+                isSubmittingSubscription = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Save Subscription';
+                }
+            }
         });
-        if (!approved) return;
+        return;
     }
 
     isSubmittingSubscription = true;
@@ -1935,11 +2321,13 @@ addForm.addEventListener('submit', async e => {
             price:     parseFloat(price).toFixed(2),
             dateAdded: getLocalDateTimeString(),
             startDate: startDate || todayISO(),
+            reminder:  'none',
             category:  'unlisted',
             paused:    false,
         };
         subscriptions.push(newSub);
         await upsertSubscription(newSub);
+        haptic('success');
         addForm.reset();
         document.getElementById('add-start-date').value = todayISO();
         customDaysGroup.style.display = 'none';
@@ -1980,6 +2368,7 @@ addExpenseForm.addEventListener('submit', async e => {
         const newExp = { id: Date.now().toString(), name, amount: parseFloat(amount), date, type: 'manual' };
         expenses.push(newExp);
         await insertExpense(newExp);
+        haptic('success');
         addExpenseForm.reset();
         document.getElementById('exp-date').value = todayISO();
         closeAddSheet();
@@ -1993,22 +2382,108 @@ addExpenseForm.addEventListener('submit', async e => {
     }
 });
 
+const sheetOverlay = document.getElementById('add-sheet-overlay');
+const sheet        = document.getElementById('add-sheet');
+const editExpenseSheetForm = document.getElementById('sheet-edit-exp-form');
+const editExpenseDeleteBtn = document.getElementById('edit-expense-delete-btn');
+const editExpenseDeleteConfirm = document.getElementById('edit-expense-delete-confirm');
+
+document.getElementById('sheet-edit-expense-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (isSavingExpenseEdit || !activeSheetExpenseId) return;
+
+    const expense = expenses.find(exp => exp.id === activeSheetExpenseId && exp.type === 'manual');
+    if (!expense) return;
+
+    const submitBtn = document.getElementById('save-edit-expense-btn');
+    const name = document.getElementById('edit-sheet-exp-name').value.trim();
+    const amount = document.getElementById('edit-sheet-exp-amount').value;
+    const date = document.getElementById('edit-sheet-exp-date').value || todayISO();
+    if (!name || !amount) return;
+
+    isSavingExpenseEdit = true;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving...';
+
+    try {
+        expense.name = name;
+        expense.amount = parseFloat(amount);
+        expense.date = date;
+        await updateExpense(expense);
+        haptic('success');
+        closeAddSheet();
+        await renderApp();
+        if (analyticsView === 'expenses') renderExpensesView();
+        showToast('Expense updated');
+    } finally {
+        isSavingExpenseEdit = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save Expense';
+    }
+});
+
+editExpenseDeleteBtn?.addEventListener('click', () => {
+    if (!activeSheetExpenseId) return;
+    editExpenseDeleteBtn.style.display = 'none';
+    editExpenseDeleteConfirm.style.display = 'block';
+});
+
+document.getElementById('edit-expense-delete-cancel-btn')?.addEventListener('click', () => {
+    resetEditExpenseDeleteState();
+});
+
+document.getElementById('edit-expense-delete-confirm-btn')?.addEventListener('click', async () => {
+    if (!activeSheetExpenseId || !currentUser) return;
+    const expenseId = activeSheetExpenseId;
+    haptic('error');
+    await sbWrite(() => sb.from('expenses').delete().eq('id', expenseId).eq('user_id', currentUser.id));
+    expenses = expenses.filter(exp => exp.id !== expenseId);
+    closeAddSheet();
+    await renderApp();
+    if (analyticsView === 'expenses') renderExpensesView();
+    showToast('Expense deleted');
+});
+
 // ═══════════════════════════════════════════
 // BOTTOM SHEET
 // ═══════════════════════════════════════════
-const sheetOverlay = document.getElementById('add-sheet-overlay');
-const sheet        = document.getElementById('add-sheet');
+
+function resetEditExpenseDeleteState() {
+    if (editExpenseDeleteBtn) editExpenseDeleteBtn.style.display = 'block';
+    if (editExpenseDeleteConfirm) editExpenseDeleteConfirm.style.display = 'none';
+}
+
+function openEditExpenseSheet(expenseId) {
+    const exp = expenses.find(entry => entry.id === expenseId && entry.type === 'manual');
+    if (!exp) return;
+
+    activeSheetExpenseId = expenseId;
+    document.getElementById('edit-sheet-exp-name').value = exp.name;
+    document.getElementById('edit-sheet-exp-amount').value = exp.amount;
+    document.getElementById('edit-sheet-exp-date').value = exp.date || todayISO();
+    resetEditExpenseDeleteState();
+    openAddSheet('edit-expense');
+}
 
 function openAddSheet(mode) {
     const subForm = document.getElementById('sheet-sub-form');
     const expForm = document.getElementById('sheet-exp-form');
     if (mode === 'expense') {
-        subForm.style.display = 'none'; expForm.style.display = 'block';
+        subForm.style.display = 'none';
+        expForm.style.display = 'block';
+        editExpenseSheetForm.style.display = 'none';
         document.getElementById('exp-date').value = todayISO();
+    } else if (mode === 'edit-expense') {
+        subForm.style.display = 'none';
+        expForm.style.display = 'none';
+        editExpenseSheetForm.style.display = 'block';
     } else {
-        subForm.style.display = 'block'; expForm.style.display = 'none';
+        subForm.style.display = 'block';
+        expForm.style.display = 'none';
+        editExpenseSheetForm.style.display = 'none';
         document.getElementById('add-start-date').value = todayISO();
     }
+    haptic('light');
     sheetOverlay.classList.add('open');
     document.body.style.overflow = 'hidden';
 }
@@ -2017,6 +2492,8 @@ function closeAddSheet() {
     sheetOverlay.classList.remove('open');
     sheet.style.transform = '';
     document.body.style.overflow = '';
+    activeSheetExpenseId = null;
+    resetEditExpenseDeleteState();
 }
 
 // FAB
@@ -2027,7 +2504,7 @@ const fabOverlay   = document.getElementById('fab-overlay');
 function toggleFab() { const o = fabContainer.classList.toggle('open'); fabOverlay.classList.toggle('open', o); }
 function closeFab()  { fabContainer.classList.remove('open'); fabOverlay.classList.remove('open'); }
 
-fabBtn.addEventListener('click', e => { e.preventDefault(); toggleFab(); });
+fabBtn.addEventListener('click', e => { e.preventDefault(); haptic('light'); toggleFab(); });
 fabOverlay.addEventListener('click', closeFab);
 document.getElementById('fab-option-sub').addEventListener('click', () => { closeFab(); openAddSheet('subscription'); });
 document.getElementById('fab-option-expense').addEventListener('click', () => { closeFab(); openAddSheet('expense'); });
@@ -2036,10 +2513,26 @@ sheetOverlay.addEventListener('click', e => { if (e.target === sheetOverlay) clo
 // Drag-to-dismiss
 (function () {
     const handle = document.getElementById('sheet-handle');
-    let dragStartY = 0, isDragging = false;
-    handle.addEventListener('touchstart', e => { dragStartY = e.touches[0].clientY; isDragging = true; sheet.style.transition = 'none'; }, { passive: true });
+    let dragStartY = 0, dragStartTime = 0, isDragging = false;
+    handle.addEventListener('touchstart', e => { dragStartY = e.touches[0].clientY; dragStartTime = e.timeStamp; isDragging = true; sheet.style.transition = 'none'; }, { passive: true });
     handle.addEventListener('touchmove', e => { if (!isDragging) return; const d = e.touches[0].clientY - dragStartY; if (d > 0) sheet.style.transform = `translateY(${d}px)`; }, { passive: true });
-    handle.addEventListener('touchend', e => { if (!isDragging) return; isDragging = false; sheet.style.transition = ''; const d = e.changedTouches[0].clientY - dragStartY; if (d > 80) closeAddSheet(); else sheet.style.transform = 'translateY(0)'; }, { passive: true });
+    handle.addEventListener('touchend', e => {
+        if (!isDragging) return;
+        isDragging = false;
+        const delta = e.changedTouches[0].clientY - dragStartY;
+        const velocity = delta / Math.max(1, e.timeStamp - dragStartTime);
+        if (delta > 80 || velocity > 0.5) {
+            sheet.animate(
+                [{ transform: sheet.style.transform }, { transform: 'translateY(100%)' }],
+                { duration: 280, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' }
+            ).onfinish = () => closeAddSheet();
+        } else {
+            sheet.animate(
+                [{ transform: sheet.style.transform }, { transform: 'translateY(0)' }],
+                { duration: 400, easing: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)', fill: 'forwards' }
+            ).onfinish = () => { sheet.style.transform = ''; };
+        }
+    }, { passive: true });
 })();
 
 // ═══════════════════════════════════════════
@@ -2115,10 +2608,10 @@ function renderExpensesView() {
     }
 
     const q = analyticsExpSearch.trim().toLowerCase();
-    const sorted = [...rangedExpenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sorted = [...rangedExpenses].sort((a, b) => parseDateValue(b.date) - parseDateValue(a.date));
     const todayStr = todayISO();
     const yest = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return getLocalDateKey(d); })();
-    const dateLabel = iso => iso === todayStr ? 'Today' : iso === yest ? 'Yesterday' : new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+    const dateLabel = iso => iso === todayStr ? 'Today' : iso === yest ? 'Yesterday' : parseDateValue(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short' });
 
     // Build day groups
     const groups = []; const seen = new Map();
@@ -2140,9 +2633,10 @@ function renderExpensesView() {
         container.appendChild(dayLabel);
 
         visible.forEach(exp => {
-            const row = document.createElement('button');
-            row.type = 'button';
-            row.className = 'exp-row exp-row-button';
+            const isManual = exp.type === 'manual';
+            const row = document.createElement(isManual ? 'button' : 'div');
+            if (isManual) row.type = 'button';
+            row.className = `exp-row${isManual ? ' exp-row-button' : ''}`;
 
             const left = document.createElement('div');
             left.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;';
@@ -2154,16 +2648,18 @@ function renderExpensesView() {
             const right = document.createElement('div');
             right.style.cssText = 'display:flex;align-items:center;gap:10px;';
             const amtSpan  = document.createElement('span'); amtSpan.className  = 'exp-amount'; amtSpan.textContent = getCurrencySymbol() + formatAmount(exp.amount);
-            const chevron = document.createElement('span');
-            chevron.className = 'material-symbols-outlined';
-            chevron.style.cssText = 'font-size:18px;color:var(--on-surface-variant);';
-            chevron.textContent = 'chevron_right';
             right.appendChild(amtSpan);
-            right.appendChild(chevron);
+            if (isManual) {
+                const chevron = document.createElement('span');
+                chevron.className = 'material-symbols-outlined';
+                chevron.style.cssText = 'font-size:18px;color:var(--on-surface-variant);';
+                chevron.textContent = 'chevron_right';
+                right.appendChild(chevron);
+            }
 
             row.appendChild(left);
             row.appendChild(right);
-            row.addEventListener('click', () => viewExpenseDetails(exp.id));
+            if (isManual) row.addEventListener('click', () => openEditExpenseSheet(exp.id));
             container.appendChild(row);
         });
 
@@ -2211,24 +2707,25 @@ async function renderApp() {
         document.getElementById('spend-trend').style.display = 'inline-flex';
     }
 
-    const subItems = subscriptions.map(sub => ({ _type:'sub', _sortDate:new Date(sub.startDate || sub.dateAdded), data:sub }));
-    const expItems = expenses.filter(e => e.type === 'manual').map(exp => ({ _type:'exp', _sortDate:new Date(exp.date), data:exp }));
+    const subItems = subscriptions.map(sub => ({ _type:'sub', _sortDate:parseDateValue(sub.startDate || sub.dateAdded), data:sub }));
+    const expItems = expenses.filter(e => e.type === 'manual').map(exp => ({ _type:'exp', _sortDate:parseDateValue(exp.date), data:exp }));
     const mixed    = [...subItems, ...expItems].sort((a,b) => b._sortDate - a._sortDate);
     const visible  = mixed.slice(0, 5);
 
-    visible.forEach(entry => {
+    visible.forEach((entry, idx) => {
         if (entry._type === 'sub') {
             const sub   = entry.data;
             const color = colorFromName(sub.name);
             const item  = document.createElement('div');
             item.className = 'list-item';
+            item.classList.add('list-item-stagger');
+            item.style.animationDelay = (idx * 40) + 'ms';
             item.style.cursor = 'default';
             if (sub.paused) item.style.opacity = '0.5';
 
             const left = document.createElement('div'); left.className = 'list-item-left';
-            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
-            icon.style.cssText = `background:${color}20;color:${color};font-size:24px;`;
-            icon.textContent = sub.name.charAt(0).toUpperCase();
+            const _iconWrap1 = document.createElement('div'); _iconWrap1.innerHTML = buildIconCircle(sub.name, sub.category, color, '48px');
+            const icon = _iconWrap1.firstElementChild;
             const info = document.createElement('div');
             const titleEl = document.createElement('div'); titleEl.className = 'list-title'; titleEl.textContent = sub.name;
             if (sub.paused) {
@@ -2248,6 +2745,7 @@ async function renderApp() {
 
             item.appendChild(left); item.appendChild(right);
             portfolioList.appendChild(item);
+            attachLongPress(item, sub.id);
 
             if (!sub.paused) {
                 const today = new Date(); today.setHours(0,0,0,0);
@@ -2259,9 +2757,8 @@ async function renderApp() {
                 const miniCard = document.createElement('div');
                 miniCard.className = 'card-mini';
                 miniCard.style.cursor = 'default';
-                const cardIcon = document.createElement('div'); cardIcon.className = 'card-icon';
-                cardIcon.style.cssText = `background:${color}20;color:${color};`;
-                cardIcon.innerHTML = '<span class="material-symbols-outlined">payments</span>';
+                const _cardIconWrap = document.createElement('div'); _cardIconWrap.innerHTML = buildIconCircle(sub.name, sub.category, color, '40px');
+                const cardIcon = _cardIconWrap.firstElementChild; cardIcon.classList.add('card-icon');
                 const cardName = document.createElement('h3'); cardName.textContent = sub.name;
                 const cardDate = document.createElement('p'); cardDate.style.cssText = `font-size:0.85rem;color:${textColor};font-weight:600;`; cardDate.textContent = renewalText;
                 miniCard.appendChild(cardIcon); miniCard.appendChild(cardName); miniCard.appendChild(cardDate);
@@ -2273,9 +2770,8 @@ async function renderApp() {
             item.className = 'list-item'; item.style.cursor = 'default';
 
             const left = document.createElement('div'); left.className = 'list-item-left';
-            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
-            icon.style.cssText = 'background:var(--surface-high);color:var(--on-surface-variant);';
-            icon.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">receipt_long</span>';
+            const _iconWrap2 = document.createElement('div'); _iconWrap2.innerHTML = buildIconCircle(exp.name, null, 'var(--on-surface-variant)', '48px');
+            const icon = _iconWrap2.firstElementChild;
             const info = document.createElement('div');
             const titleEl    = document.createElement('div'); titleEl.className = 'list-title'; titleEl.textContent = exp.name;
             const subtitleEl = document.createElement('div'); subtitleEl.className = 'list-subtitle'; subtitleEl.textContent = formatDate(exp.date);
@@ -2320,14 +2816,48 @@ async function renderApp() {
 
     const now = new Date();
     const thisMonthExpenses = expenses
-        .filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
+        .filter(e => { const d = parseDateValue(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
         .reduce((s,e) => s + parseFloat(e.amount), 0);
-    document.getElementById('total-spend').textContent = formatAmount(totalMonthly + thisMonthExpenses);
-    document.getElementById('ytd-spend').textContent   = formatAmount(totalMonthly);
+    animateCounter('total-spend', totalMonthly + thisMonthExpenses, 400);
+    animateCounter('ytd-spend', totalMonthly, 400);
+
+    const dailyAvgEl = document.getElementById('daily-avg');
+    if (dailyAvgEl) {
+        const daysElapsed = now.getDate();
+        const totalSpend  = totalMonthly + thisMonthExpenses;
+        const dailyAvg    = totalSpend / daysElapsed;
+        if (totalSpend > 0) {
+            dailyAvgEl.textContent = `₹${dailyAvg.toLocaleString('en-IN', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            })} per day this month`;
+            dailyAvgEl.style.display = 'block';
+        } else {
+            dailyAvgEl.style.display = 'none';
+        }
+    }
 
     renderAnalyticsView();
     renderInsights();
     renderMonthlyReview();
+    updateAppBadge();
+}
+
+function updateAppBadge() {
+    if (!('setAppBadge' in navigator)) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const soonCount = subscriptions.filter(sub => {
+        if (sub.paused) return false;
+        const anchor = sub.startDate || sub.dateAdded;
+        const next = getNextRenewalDate(anchor, sub.cycle);
+        const diffDays = Math.ceil((next - today) / 86400000);
+        return diffDays >= 0 && diffDays <= 3;
+    }).length;
+    if (soonCount > 0) {
+        navigator.setAppBadge(soonCount).catch(() => {});
+    } else {
+        navigator.clearAppBadge().catch(() => {});
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -2347,11 +2877,11 @@ function renderInsights() {
     const msDay         = 86400000;
     const weekAgoMs     = now.getTime() - 7  * msDay;
     const twoWeeksAgoMs = now.getTime() - 14 * msDay;
-    const thisWeekExps  = manualExp.filter(e => new Date(e.date).getTime() >= weekAgoMs);
-    const lastWeekExps  = manualExp.filter(e => { const t = new Date(e.date).getTime(); return t >= twoWeeksAgoMs && t < weekAgoMs; });
+    const thisWeekExps  = manualExp.filter(e => parseDateValue(e.date).getTime() >= weekAgoMs);
+    const lastWeekExps  = manualExp.filter(e => { const t = parseDateValue(e.date).getTime(); return t >= twoWeeksAgoMs && t < weekAgoMs; });
     const thisWeekTotal = thisWeekExps.reduce((s,e) => s + parseFloat(e.amount), 0);
     const lastWeekTotal = lastWeekExps.reduce((s,e) => s + parseFloat(e.amount), 0);
-    const thisMonthExp  = manualExp.filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+    const thisMonthExp  = manualExp.filter(e => { const d = parseDateValue(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
     const thisMonthExpTotal = thisMonthExp.reduce((s,e) => s + parseFloat(e.amount), 0);
     const renewalsToday = [], renewalsSoon = [];
     activeSubs.forEach(sub => {
@@ -2370,7 +2900,7 @@ function renderInsights() {
         catTotals[cid].count++;
     });
     let oldestSub = null, oldestDays = 0;
-    activeSubs.forEach(sub => { const days = Math.floor((now - new Date(sub.dateAdded)) / msDay); if (days > oldestDays) { oldestDays = days; oldestSub = sub; } });
+    activeSubs.forEach(sub => { const days = Math.floor((now - parseDateValue(sub.dateAdded)) / msDay); if (days > oldestDays) { oldestDays = days; oldestSub = sub; } });
     let nextRenewalDays = Infinity;
     activeSubs.forEach(sub => { const anchor = sub.startDate || sub.dateAdded; const diff = Math.ceil((getNextRenewalDate(anchor, sub.cycle) - todayMidnight) / msDay); if (diff < nextRenewalDays) nextRenewalDays = diff; });
     const sym = getCurrencySymbol();
@@ -2534,11 +3064,11 @@ function renderAnalytics() {
         listEl.style.cssText += 'min-height:50px;padding:10px 0;border-radius:var(--radius-md);transition:background 0.2s;';
         listEl.addEventListener('dragover', e => { e.preventDefault(); listEl.style.background = 'var(--surface)'; listEl.style.border = '1px dashed var(--primary)'; });
         listEl.addEventListener('dragleave', () => { listEl.style.background = 'transparent'; listEl.style.border = 'none'; });
-        listEl.addEventListener('drop', async e => {
+        listEl.addEventListener('drop', e => {
             e.preventDefault(); listEl.style.background = 'transparent'; listEl.style.border = 'none';
             const draggedId = e.dataTransfer.getData('text/plain');
             const sub = subscriptions.find(s => s.id === draggedId);
-            if (sub && sub.category !== id) { sub.category = id; await upsertSubscription(sub); renderAnalytics(); }
+            if (sub && sub.category !== id) { sub.category = id; debouncedUpsertSub(sub); renderAnalytics(); }
         });
         if (subs.length === 0 && showHeading && !q) {
             const empty = document.createElement('p');
@@ -2560,9 +3090,8 @@ function renderAnalytics() {
             if (sub.paused) item.style.opacity = '0.5';
 
             const left = document.createElement('div'); left.className = 'list-item-left';
-            const icon = document.createElement('div'); icon.className = 'list-icon-wrapper';
-            icon.style.cssText = `background:${color}20;color:${color};font-size:20px;width:40px;height:40px;`;
-            icon.textContent = sub.name.charAt(0).toUpperCase();
+            const _iconWrap3 = document.createElement('div'); _iconWrap3.innerHTML = buildIconCircle(sub.name, sub.category, color, '40px');
+            const icon = _iconWrap3.firstElementChild;
             const info = document.createElement('div');
             const titleEl    = document.createElement('div'); titleEl.className = 'list-title'; titleEl.style.fontSize = '0.95rem'; titleEl.textContent = sub.name;
             const subtitleEl = document.createElement('div'); subtitleEl.className = 'list-subtitle'; subtitleEl.style.cssText = `color:${textColor};font-weight:600;`; subtitleEl.textContent = renewalText;
@@ -2634,7 +3163,7 @@ async function addCategoryFn(name) {
     if (!name || categories.find(c => c.name.toLowerCase() === name.toLowerCase())) return;
     const cat = { id: 'cat_' + Date.now(), name };
     categories.push(cat);
-    await upsertCategory(cat);
+    debouncedUpsertCat(cat);
     document.getElementById('add-category-input').value = '';
     renderAnalytics();
     showToast('Category added');
@@ -2680,112 +3209,41 @@ window.toggleProfileSection = function(bodyId, chevronId) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function randomChars(len) {
-    const chars = "^%*&()_+-=[]{}|;:,.<>?/\\#@!$";
-    let out = "";
-    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-    return out;
-}
-
-/**
- * Animated decoding effect: random noise -> target text with highlighter reveal
- */
-async function decodeStatus(el, target, duration = 800) {
-    if (!el) return;
-    
-    // Clear any previous animation interval on this element
-    if (el._decodeInterval) clearInterval(el._decodeInterval);
-    
-    const start = Date.now();
-    
-    return new Promise(resolve => {
-        el._decodeInterval = setInterval(() => {
-            const elapsed = Date.now() - start;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            // Number of characters to "reveal" in order
-            const revealedCount = Math.floor(progress * target.length);
-            
-            let finalHTML = "";
-            for (let i = 0; i < target.length; i++) {
-                if (i < revealedCount) {
-                    // Revealed character with solid background
-                    finalHTML += `<span class="char-decoded">${target[i]}</span>`;
-                } else {
-                    // Noise character (dimmed)
-                    finalHTML += `<span class="char-noise">${randomChars(1)}</span>`;
-                }
-            }
-            
-            el.innerHTML = finalHTML;
-            
-            if (progress >= 1) {
-                clearInterval(el._decodeInterval);
-                el._decodeInterval = null;
-                el.textContent = target; // Fallback to plain text on final
-                resolve();
-            }
-        }, 50);
-    });
-}
-
-function startBootNoise() {
-    const noiseEl = document.getElementById("boot-noise");
-    if (!noiseEl) return () => {};
-
-    const timer = setInterval(() => {
-        noiseEl.textContent = `${randomChars(42)}\n${randomChars(34)}\n${randomChars(28)}`;
-    }, 80);
-
-    return () => clearInterval(timer);
-}
-
 async function runBootWithLoader(bootFn, minVisible = 250) {
-    const loading = document.getElementById('app-loading');
-    const statusEl = document.getElementById('boot-status');
-    if (!loading) return bootFn();
     const startTime = Date.now();
-    
-    loading.classList.remove('hidden');
-    const stopNoise = startBootNoise();
-    let forcedHideTimer = null;
+    let forcedDismissTimer = null;
+    console.log('[boot] runBootWithLoader start');
 
     try {
-        forcedHideTimer = setTimeout(() => {
-            loading.classList.add('hidden');
+        forcedDismissTimer = setTimeout(() => {
+            console.log('[boot] forced 12s dismiss fired');
+            if (typeof window.dismissLoader === 'function') window.dismissLoader();
         }, 12000);
 
-        if (statusEl) statusEl.textContent = "INITIALIZING ATŁER...";
-        
-        // Run the boot function with a 10s safety timeout to prevent getting "stuck"
         const bootPromise = bootFn();
         const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 2500));
-        
+
         const bootResult = await Promise.race([bootPromise, timeoutPromise]);
+        console.log('[boot] race resolved:', bootResult, 'elapsed:', Date.now() - startTime);
 
         if (bootResult === 'timeout') {
             const authScreen = document.getElementById('auth-screen');
             if (authScreen && !currentUser) authScreen.classList.remove('hidden');
-            if (statusEl) statusEl.textContent = "STARTUP TIMEOUT.";
+            if (typeof window.dismissLoader === 'function') window.dismissLoader();
             return;
         }
 
-        // Ensure loader is visible for the requested vibe duration
         const elapsed = Date.now() - startTime;
         if (elapsed < minVisible) await sleep(minVisible - elapsed);
 
     } catch (error) {
-        console.error('Boot failed:', error);
+        console.error('[boot] Boot failed:', error);
         const authScreen = document.getElementById('auth-screen');
         if (authScreen && !currentUser) authScreen.classList.remove('hidden');
     } finally {
-        clearTimeout(forcedHideTimer);
-        stopNoise();
-        loading.style.opacity = '0';
-        loading.style.transition = 'opacity 0.3s ease';
-        await sleep(300);
-        loading.classList.add('hidden');
-        loading.style.opacity = '';
+        console.log('[boot] finally — calling dismissLoader, type:', typeof window.dismissLoader);
+        clearTimeout(forcedDismissTimer);
+        if (typeof window.dismissLoader === 'function') window.dismissLoader();
     }
 }
 
@@ -2877,6 +3335,7 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
 
             await loadAllData();
             await renderApp();
+            updateAppBadge();
             renderProfilePage();
             scheduleRenewalNotifications();
             showNotificationPrompt();
@@ -2900,3 +3359,150 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
         authScreen.classList.remove('hidden');
     }
 });
+
+// ═══════════════════════════════════════════
+// HORIZONTAL SWIPE NAVIGATION
+// ═══════════════════════════════════════════
+(function () {
+    let xStart = null;
+    const THRESHOLD = 60;
+    const SKIP_PAGES = new Set(['details-page', 'expense-details-page']);
+
+    document.addEventListener('touchstart', e => {
+        xStart = e.touches[0].clientX;
+    }, { passive: true });
+
+    document.addEventListener('touchend', e => {
+        if (xStart === null) return;
+        const delta = e.changedTouches[0].clientX - xStart;
+        xStart = null;
+
+        if (Math.abs(delta) < THRESHOLD) return;
+        if (SKIP_PAGES.has(currentPageId)) return;
+
+        const currentIdx = swipePageOrder.indexOf(currentPageId);
+        if (currentIdx === -1) return;
+
+        if (delta < 0) {
+            // swipe left → go forward (slide in from right)
+            const nextIdx = currentIdx + 1;
+            if (nextIdx < swipePageOrder.length) {
+                switchPage(swipePageOrder[nextIdx], { preserveHistory: false }, 'right');
+            }
+        } else {
+            // swipe right → go back (slide in from left)
+            const prevIdx = currentIdx - 1;
+            if (prevIdx >= 0) {
+                switchPage(swipePageOrder[prevIdx], { preserveHistory: false }, 'left');
+            }
+        }
+    }, { passive: true });
+}());
+
+// ── Long Press Context Menu ──────────────────────────────────────
+(function() {
+    const menu    = document.getElementById('context-menu');
+    const overlay = document.getElementById('context-overlay');
+    let ctxSubId  = null;
+    let longPressTimer = null;
+
+    function openCtx(subId, x, y) {
+        ctxSubId = subId;
+        const sub = subscriptions.find(s => s.id === subId);
+        if (!sub) return;
+        document.getElementById('ctx-pause-icon').textContent  = sub.paused ? 'play_arrow' : 'pause';
+        document.getElementById('ctx-pause-label').textContent = sub.paused ? 'Resume' : 'Pause';
+        menu.style.display    = 'block';
+        overlay.style.display = 'block';
+        const menuW = 180, menuH = 140;
+        const safeX = Math.min(x, window.innerWidth  - menuW - 16);
+        const safeY = Math.min(y, window.innerHeight - menuH - 16);
+        menu.style.left = safeX + 'px';
+        menu.style.top  = safeY + 'px';
+    }
+
+    function closeCtx() {
+        menu.style.display    = 'none';
+        overlay.style.display = 'none';
+        ctxSubId = null;
+    }
+
+    overlay.addEventListener('click', closeCtx);
+
+    document.getElementById('ctx-edit').addEventListener('click', () => {
+        closeCtx();
+        viewDetails(ctxSubId);
+    });
+
+    document.getElementById('ctx-pause').addEventListener('click', async () => {
+        const sub = subscriptions.find(s => s.id === ctxSubId);
+        if (!sub) return;
+        closeCtx();
+        sub.paused = !sub.paused;
+        await upsertSubscription(sub);
+        showToast(sub.paused ? 'Subscription paused' : 'Subscription resumed');
+        renderApp();
+    });
+
+    document.getElementById('ctx-delete').addEventListener('click', () => {
+        const id = ctxSubId;
+        closeCtx();
+        showConfirm('Delete this subscription?', async () => {
+            await deleteSubscription(id);
+            subscriptions = subscriptions.filter(s => s.id !== id);
+            showToast('Subscription deleted');
+            renderApp();
+        });
+    });
+
+    window.attachLongPress = function(el, subId) {
+        el.addEventListener('touchstart', e => {
+            longPressTimer = setTimeout(() => {
+                haptic('medium');
+                const t = e.touches[0];
+                openCtx(subId, t.clientX, t.clientY);
+            }, 500);
+        }, { passive: true });
+        el.addEventListener('touchend',  () => clearTimeout(longPressTimer), { passive: true });
+        el.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+    };
+})();
+
+// ── Pull to Refresh ──────────────────────────────────────────────
+(function () {
+    let startY = 0, pulling = false, triggered = false;
+    const indicator = document.getElementById('pull-indicator');
+    const threshold = 72;
+
+    document.addEventListener('touchstart', e => {
+        const page = document.getElementById('dashboard-page');
+        if (!page.classList.contains('active')) return;
+        if (window.scrollY > 0) return;
+        startY    = e.touches[0].clientY;
+        pulling   = true;
+        triggered = false;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', e => {
+        if (!pulling) return;
+        const delta = e.touches[0].clientY - startY;
+        if (delta < 0) { pulling = false; return; }
+        const pull = Math.min(delta * 0.45, threshold);
+        indicator.style.height = pull + 'px';
+        triggered = pull >= threshold * 0.9;
+        indicator.querySelector('span').style.transform =
+            triggered ? 'rotate(180deg)' : 'rotate(0deg)';
+    }, { passive: true });
+
+    document.addEventListener('touchend', async () => {
+        if (!pulling) return;
+        pulling = false;
+        indicator.style.height = '0';
+        indicator.querySelector('span').style.transform = 'rotate(0deg)';
+        if (triggered) {
+            showToast('Refreshing...');
+            await loadAllData();
+            await renderApp();
+        }
+    }, { passive: true });
+}());
