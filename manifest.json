@@ -2,8 +2,8 @@
   "name": "Atler",
   "short_name": "Atler",
   "description": "Your personal subscription & expense tracker",
-  "start_url": "/ATLER/",
-  "scope": "/ATLER/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0e0e0e",
@@ -26,12 +26,12 @@
     {
       "name": "Add Subscription",
       "short_name": "Add Subscription",
-      "url": "/ATLER/#add-subscription"
+      "url": "./#add-subscription"
     },
     {
       "name": "Log Expense",
       "short_name": "Log Expense",
-      "url": "/ATLER/#add-expense"
+      "url": "./#add-expense"
     }
   ]
 }
